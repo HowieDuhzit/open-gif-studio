@@ -179,6 +179,13 @@ Use a classic video editor visual language without copying a specific product:
 
 Browser-only MVP implementation started and verified with `npm run build`.
 
+Current implementation focus:
+
+- [ ] Add a Magnific animated icon browser modal in the media bin.
+- [ ] Search `GET /v1/icons` with animated-only filters and recent/relevance ordering.
+- [ ] Download selected icons as GIFs and add them into the current project via the existing import path.
+- [ ] Keep drag/drop disabled while any modal is open and verify with `npm run build`.
+
 Implemented:
 
 - Vite + React + TypeScript app scaffold.
@@ -215,6 +222,8 @@ Implemented:
 - Project was initialized as git, committed, and published to a new GitHub repository.
 - Media bin now supports multiple GIFs in a single project, with additive import and multi-file drag/drop.
 - Projects can now be saved to and loaded from `.ogsp.json` files containing source GIFs and edit state.
+- Media bin now includes a Magnific animated icon browser modal backed by a local Vite proxy using `MAGNIFIC_API_KEY`; selected animated icons download as GIFs and are added through the normal project import path.
+- Drag-and-drop is now disabled while any modal is open, covering both export and the animated icon browser.
 
 Verified:
 

@@ -87,6 +87,31 @@ type ExportSettings = {
   optimizeTransparency: boolean;
 };
 
+type MagnificIconOrder = "recent" | "relevance";
+type MagnificIconStyleFilter = "all" | "basic-accent-lineal-color" | "basic-accent-outline";
+
+type MagnificIcon = {
+  id: number;
+  name: string;
+  slug: string;
+  free_svg: boolean;
+  thumbnails: Array<{ url: string; width: number; height: number }>;
+  style: { id: number; name: string };
+  author: { id: number; name: string; slug: string };
+};
+
+type MagnificPagination = {
+  current_page: number;
+  per_page: number;
+  last_page: number;
+  total: number;
+};
+
+type MagnificIconsResponse = {
+  data: MagnificIcon[];
+  meta: { pagination: MagnificPagination };
+};
+
 const repoUrl = "https://github.com/HowieDuhzit/open-gif-studio";
 const donationUrl = "https://buymeacoffee.com/howieduhzit";
 
@@ -100,6 +125,12 @@ const autosaveKey = "frameforge-editor-state";
 const presetStorageKey = "frameforge-effect-presets";
 const transparencyKey = { r: 255, g: 0, b: 255 };
 const transparencyKeyNumber = 0xff00ff;
+const initialMagnificPagination: MagnificPagination = { current_page: 1, per_page: 24, last_page: 1, total: 0 };
+const magnificStyleNames: Record<MagnificIconStyleFilter, string | null> = {
+  all: null,
+  "basic-accent-lineal-color": "Basic Accent Lineal Color",
+  "basic-accent-outline": "Basic Accent Outline",
+};
 const defaultExportSettings: ExportSettings = {
   fileName: "edited-animation",
   quality: 10,
@@ -576,7 +607,16 @@ function App() {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [exportFileSize, setExportFileSize] = useState<number | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isIconModalOpen, setIsIconModalOpen] = useState(false);
   const [exportSettings, setExportSettings] = useState<ExportSettings>(defaultExportSettings);
+  const [iconSearchTerm, setIconSearchTerm] = useState("");
+  const [iconOrder, setIconOrder] = useState<MagnificIconOrder>("recent");
+  const [iconStyleFilter, setIconStyleFilter] = useState<MagnificIconStyleFilter>("all");
+  const [iconResults, setIconResults] = useState<MagnificIcon[]>([]);
+  const [iconPagination, setIconPagination] = useState<MagnificPagination>(initialMagnificPagination);
+  const [iconLoading, setIconLoading] = useState(false);
+  const [iconError, setIconError] = useState("");
+  const [iconImportingId, setIconImportingId] = useState<number | null>(null);
   const [presetName, setPresetName] = useState("");
   const [savedPresets, setSavedPresets] = useState<Record<string, Effect[]>>({});
   const [history, setHistory] = useState<{ past: EditorState[]; future: EditorState[] }>({ past: [], future: [] });
@@ -614,6 +654,13 @@ function App() {
   const timing = getTimingEffect(editor.effects);
   const canSavePreset = activeEffects.length > 0;
   const exportBaseName = exportSettings.fileName.trim() || "edited-animation";
+  const isAnyModalOpen = isExportModalOpen || isIconModalOpen;
+  const isDragDropEnabled = !isAnyModalOpen;
+  const filteredIconResults = useMemo(() => {
+    const styleName = magnificStyleNames[iconStyleFilter];
+    if (!styleName) return iconResults;
+    return iconResults.filter((icon) => icon.style.name === styleName);
+  }, [iconResults, iconStyleFilter]);
 
   useEffect(() => {
     if (!activeAsset) return;
@@ -651,6 +698,18 @@ function App() {
     if (!isExportModalOpen || !activeAsset || !selectedFrame || !exportPreviewRef.current) return;
     renderFrame(exportPreviewRef.current, selectedFrame, activeAsset, editor, projectEffects);
   }, [activeAsset, editor, isExportModalOpen, projectEffects, selectedFrame]);
+
+  useEffect(() => {
+    if (!isAnyModalOpen) return;
+    setIsDragging(false);
+    setDraggedAssetId(null);
+    setDraggedEffectId(null);
+  }, [isAnyModalOpen]);
+
+  useEffect(() => {
+    if (!isIconModalOpen) return;
+    void loadMagnificIcons(1, false);
+  }, [isIconModalOpen]);
 
   useEffect(() => {
     if (!outputSize || !monitorRef.current) return;
@@ -847,7 +906,7 @@ function App() {
   }
 
   function reorderEffect(sourceId: string, targetId: string) {
-    if (sourceId === targetId) return;
+    if (!isDragDropEnabled || sourceId === targetId) return;
     const sourceIndex = activeEffects.findIndex((effect) => effect.id === sourceId);
     const targetIndex = activeEffects.findIndex((effect) => effect.id === targetId);
     if (sourceIndex < 0 || targetIndex < 0) return;
@@ -939,8 +998,67 @@ function App() {
   async function handleDrop(event: DragEvent<HTMLElement>) {
     event.preventDefault();
     setIsDragging(false);
+    if (!isDragDropEnabled) return;
     if (event.dataTransfer.types.includes("application/x-frameforge-effect") || event.dataTransfer.types.includes("application/x-ogs-asset")) return;
     await appendGifFiles(Array.from(event.dataTransfer.files));
+  }
+
+  async function loadMagnificIcons(page = 1, append = false) {
+    const params = new URLSearchParams({
+      page: String(page),
+      per_page: String(initialMagnificPagination.per_page),
+      order: iconOrder,
+      thumbnail_size: "128",
+    });
+    if (iconSearchTerm.trim()) params.set("term", iconSearchTerm.trim());
+    params.append("filters[icon_type][]", "animated");
+
+    setIconLoading(true);
+    setIconError("");
+
+    try {
+      const response = await fetch(`/api/magnific/icons?${params.toString()}`);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message || "Failed to load animated icons.");
+
+      const result = payload as MagnificIconsResponse;
+      setIconResults((current) => (append ? [...current, ...result.data] : result.data));
+      setIconPagination(result.meta.pagination);
+    } catch (error) {
+      setIconError(error instanceof Error ? error.message : "Failed to load animated icons.");
+    } finally {
+      setIconLoading(false);
+    }
+  }
+
+  async function importMagnificIcon(icon: MagnificIcon) {
+    setIconImportingId(icon.id);
+    setIconError("");
+    setStatus(`Adding ${icon.name} from Magnific...`);
+
+    try {
+      const assetResponse = await fetch(`/api/magnific/icons/${icon.id}/download?format=gif`);
+      if (!assetResponse.ok) {
+        const payload = await assetResponse.json().catch(() => null);
+        throw new Error(payload?.message || `Failed to download ${icon.name}.`);
+      }
+
+      const blob = await assetResponse.blob();
+      const fileHeader = assetResponse.headers.get("content-disposition") || "";
+      const matchedName = fileHeader.match(/filename="([^"]+)"/i)?.[1];
+      const safeName = matchedName || `${icon.slug || icon.name}.gif`;
+      const fileName = safeName.toLowerCase().endsWith(".gif") ? safeName : `${safeName}.gif`;
+      const file = new File([blob], fileName, { type: blob.type || "image/gif" });
+
+      await appendGifFiles([file]);
+      setIsIconModalOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `Failed to add ${icon.name}.`;
+      setIconError(message);
+      setStatus(message);
+    } finally {
+      setIconImportingId(null);
+    }
   }
 
   async function handleProjectImport(event: ChangeEvent<HTMLInputElement>) {
@@ -1024,7 +1142,7 @@ function App() {
   }
 
   function reorderAssets(sourceId: string, targetId: string) {
-    if (!project || sourceId === targetId) return;
+    if (!project || !isDragDropEnabled || sourceId === targetId) return;
     const sourceIndex = project.assets.findIndex((asset) => asset.id === sourceId);
     const targetIndex = project.assets.findIndex((asset) => asset.id === targetId);
     if (sourceIndex < 0 || targetIndex < 0) return;
@@ -1052,6 +1170,18 @@ function App() {
   function openExportModal() {
     if (!activeAsset) return;
     setIsExportModalOpen(true);
+  }
+
+  function openIconModal() {
+    setIconResults([]);
+    setIconPagination(initialMagnificPagination);
+    setIconError("");
+    setIsIconModalOpen(true);
+  }
+
+  function closeIconModal() {
+    if (iconImportingId !== null) return;
+    setIsIconModalOpen(false);
   }
 
   function closeExportModal() {
@@ -1105,12 +1235,17 @@ function App() {
     <main
       className={isDragging ? "app-shell dragging" : "app-shell"}
       onDragEnter={(event) => {
+        if (!isDragDropEnabled) return;
         event.preventDefault();
         if (event.dataTransfer.types.includes("application/x-frameforge-effect") || event.dataTransfer.types.includes("application/x-ogs-asset")) return;
         setIsDragging(true);
       }}
-      onDragOver={(event) => event.preventDefault()}
+      onDragOver={(event) => {
+        if (!isDragDropEnabled) return;
+        event.preventDefault();
+      }}
       onDragLeave={(event) => {
+        if (!isDragDropEnabled) return;
         if (event.currentTarget === event.target) setIsDragging(false);
       }}
       onDrop={handleDrop}
@@ -1166,18 +1301,26 @@ function App() {
             <>
               {project ? (
                 <>
+                  <div className="asset-actions">
+                    <button className="button" type="button" onClick={openIconModal}>
+                      Browse Animated Icons
+                    </button>
+                    <small className="asset-browser-hint">Uses the local Magnific proxy. Set `MAGNIFIC_API_KEY` on the server to enable results.</small>
+                  </div>
                   <div className="asset-list">
                     {project.assets.map((asset) => (
                       <div
                         className={[asset.id === project.activeAssetId ? "asset-card active" : "asset-card", draggedAssetId === asset.id ? "dragging" : ""].filter(Boolean).join(" ")}
                         key={asset.id}
                         onDragOver={(event) => {
+                          if (!isDragDropEnabled) return;
                           if (!event.dataTransfer.types.includes("application/x-ogs-asset")) return;
                           event.preventDefault();
                           event.dataTransfer.dropEffect = "move";
                         }}
                         onDrop={(event) => {
                           event.preventDefault();
+                          if (!isDragDropEnabled) return;
                           const sourceId = event.dataTransfer.getData("application/x-ogs-asset") || draggedAssetId;
                           if (sourceId) reorderAssets(sourceId, asset.id);
                           setDraggedAssetId(null);
@@ -1198,10 +1341,11 @@ function App() {
                             <div className="asset-row">
                               <span
                                 className="drag-handle asset-drag"
-                                draggable
+                                draggable={isDragDropEnabled}
                                 aria-label={`Drag ${asset.name}`}
                                 role="button"
                                 onDragStart={(event) => {
+                                  if (!isDragDropEnabled) return;
                                   event.stopPropagation();
                                   setIsDragging(false);
                                   setDraggedAssetId(asset.id);
@@ -1259,6 +1403,14 @@ function App() {
                   <span>Import or drop one or more animated GIFs to build a project.</span>
                   <input type="file" accept="image/gif" multiple onChange={handleImport} />
                 </label>
+              )}
+              {!project && (
+                <div className="asset-actions empty">
+                  <button className="button" type="button" onClick={openIconModal}>
+                    Browse Animated Icons
+                  </button>
+                  <small className="asset-browser-hint">Uses the local Magnific proxy. Set `MAGNIFIC_API_KEY` on the server to enable results.</small>
+                </div>
               )}
             </>
           )}
@@ -1400,12 +1552,14 @@ function App() {
                   className={[effect.enabled ? "effect-card" : "effect-card disabled", draggedEffectId === effect.id ? "dragging" : ""].filter(Boolean).join(" ")}
                   key={effect.id}
                   onDragOver={(event) => {
+                    if (!isDragDropEnabled) return;
                     if (!event.dataTransfer.types.includes("application/x-frameforge-effect")) return;
                     event.preventDefault();
                     event.dataTransfer.dropEffect = "move";
                   }}
                   onDrop={(event) => {
                     event.preventDefault();
+                    if (!isDragDropEnabled) return;
                     const sourceId = event.dataTransfer.getData("text/plain") || draggedEffectId;
                     if (sourceId) reorderEffect(sourceId, effect.id);
                     setDraggedEffectId(null);
@@ -1416,10 +1570,11 @@ function App() {
                     <strong>
                       <span
                         className="drag-handle"
-                        draggable
+                        draggable={isDragDropEnabled}
                         aria-label={`Drag ${effectName(effect)} effect`}
                         role="button"
                         onDragStart={(event) => {
+                          if (!isDragDropEnabled) return;
                           event.stopPropagation();
                           setIsDragging(false);
                           setDraggedEffectId(effect.id);
@@ -1638,6 +1793,91 @@ function App() {
                   Download GIF
                 </a>
               )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {isIconModalOpen && (
+        <div className="modal-backdrop" onClick={closeIconModal}>
+          <section className="modal icon-browser-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h2>Animated Icon Browser</h2>
+                <p className="modal-copy">Search Magnific animated icons, then add one directly into the project as a GIF.</p>
+              </div>
+              <button className="mini-button" type="button" onClick={closeIconModal} disabled={iconImportingId !== null}>Close</button>
+            </div>
+
+            <form className="icon-search-row" onSubmit={(event) => {
+              event.preventDefault();
+              void loadMagnificIcons(1, false);
+            }}>
+              <label>
+                Search
+                <input type="text" value={iconSearchTerm} placeholder="cat, loader, arrow..." onChange={(event) => setIconSearchTerm(event.target.value)} />
+              </label>
+              <label>
+                Order
+                <select value={iconOrder} onChange={(event) => setIconOrder(event.target.value as MagnificIconOrder)}>
+                  <option value="recent">Recent</option>
+                  <option value="relevance">Relevance</option>
+                </select>
+              </label>
+              <label>
+                Style
+                <select value={iconStyleFilter} onChange={(event) => setIconStyleFilter(event.target.value as MagnificIconStyleFilter)}>
+                  <option value="all">All animated</option>
+                  <option value="basic-accent-lineal-color">Basic Accent Lineal Color</option>
+                  <option value="basic-accent-outline">Basic Accent Outline</option>
+                </select>
+              </label>
+              <button className="button primary" type="submit" disabled={iconLoading || iconImportingId !== null}>
+                {iconLoading ? "Searching..." : "Search"}
+              </button>
+            </form>
+
+            <div className="icon-browser-summary">
+              <span>
+                {filteredIconResults.length > 0
+                  ? `${filteredIconResults.length} shown of ${iconPagination.total || iconResults.length} animated icons`
+                  : iconPagination.total > 0
+                    ? `No results match ${magnificStyleNames[iconStyleFilter] ?? "this style filter"}`
+                    : "Animated icons only"}
+              </span>
+              <strong>Page {iconPagination.current_page} of {Math.max(1, iconPagination.last_page)}</strong>
+            </div>
+
+            {iconError && <div className="icon-browser-error">{iconError}</div>}
+
+            <div className="icon-results-grid">
+              {!iconLoading && filteredIconResults.length === 0 && !iconError && (
+                <div className="icon-results-empty">No animated icons matched this search.</div>
+              )}
+              {filteredIconResults.map((icon) => {
+                const thumbnail = icon.thumbnails[0]?.url;
+                const isImporting = iconImportingId === icon.id;
+                return (
+                  <article className="icon-card" key={icon.id}>
+                    <div className="icon-card-thumb">
+                      {thumbnail ? <img src={thumbnail} alt={icon.name} loading="lazy" /> : <div className="icon-card-fallback">No preview</div>}
+                    </div>
+                    <div className="icon-card-body">
+                      <strong title={icon.name}>{icon.name}</strong>
+                      <small>{icon.style.name} · {icon.author.name}</small>
+                    </div>
+                    <button className="button icon-import-button" type="button" disabled={iconLoading || iconImportingId !== null} onClick={() => void importMagnificIcon(icon)}>
+                      {isImporting ? "Adding..." : "Add to project"}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+
+            <div className="modal-actions">
+              <button className="button" type="button" disabled={iconLoading || iconImportingId !== null || iconPagination.current_page >= iconPagination.last_page} onClick={() => void loadMagnificIcons(iconPagination.current_page + 1, true)}>
+                {iconLoading && iconPagination.current_page > 1 ? "Loading..." : "Load more"}
+              </button>
             </div>
           </section>
         </div>
