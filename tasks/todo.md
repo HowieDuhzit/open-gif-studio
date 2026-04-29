@@ -213,6 +213,8 @@ Implemented:
 - Export modal now includes a live render preview of the current frame.
 - Rebranded to Open GIF Studio (OGS), with GitHub and Buy Me a Coffee links in the top bar.
 - Project was initialized as git, committed, and published to a new GitHub repository.
+- Media bin now supports multiple GIFs in a single project, with additive import and multi-file drag/drop.
+- Projects can now be saved to and loaded from `.ogsp.json` files containing source GIFs and edit state.
 
 Verified:
 

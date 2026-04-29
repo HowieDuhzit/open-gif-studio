@@ -43,18 +43,40 @@ type BackgroundRemovalEffect = BaseEffect & { kind: "background-removal"; color:
 type Effect = TimingEffect | TransformEffect | PresetEffect | AdjustEffect | TintEffect | ColorReplaceEffect | BlurEffect | VignetteEffect | NoiseEffect | BackgroundRemovalEffect;
 type ColorPickTarget = { effectId: string; field: "color" | "from" | "to" };
 type PanPoint = { x: number; y: number };
-type EffectScope = "global" | "frame";
+type EffectScope = "project" | "global" | "frame";
 
 type EditorState = {
   effects: Effect[];
   frameEffects: Record<string, Effect[]>;
 };
 
-type Project = {
+type ProjectAsset = {
+  id: string;
   name: string;
   width: number;
   height: number;
   frames: SourceFrame[];
+  sourceDataUrl: string;
+};
+
+type WorkspaceProject = {
+  name: string;
+  activeAssetId: string;
+  assets: ProjectAsset[];
+  projectEffects: Effect[];
+  editors: Record<string, EditorState>;
+};
+
+type SavedProject = {
+  name: string;
+  activeAssetId: string;
+  assets: Array<{
+    id: string;
+    name: string;
+    sourceDataUrl: string;
+  }>;
+  projectEffects: Effect[];
+  editors: Record<string, EditorState>;
 };
 
 type ExportSettings = {
@@ -69,15 +91,7 @@ const repoUrl = "https://github.com/HowieDuhzit/open-gif-studio";
 const donationUrl = "https://buymeacoffee.com/howieduhzit";
 
 const initialEditor: EditorState = {
-  effects: [
-    { id: "timing-1", kind: "timing", enabled: true, trimStart: 0, trimEnd: 0, reverse: false, speed: 1, loopCount: 0 },
-    { id: "transform-1", kind: "transform", enabled: true, flipH: false, flipV: false, rotate: 0, scale: 1, cropLeft: 0, cropTop: 0, cropWidth: 100, cropHeight: 100 },
-    { id: "adjust-1", kind: "adjust", enabled: true, brightness: 0, contrast: 0, saturation: 0, lightness: 0, hue: 0 },
-    { id: "tint-1", kind: "tint", enabled: false, color: "#f4b860", amount: 35 },
-    { id: "blur-1", kind: "blur", enabled: false, radius: 2 },
-    { id: "vignette-1", kind: "vignette", enabled: false, amount: 45 },
-    { id: "noise-1", kind: "noise", enabled: false, amount: 12 },
-  ],
+  effects: [],
   frameEffects: {},
 };
 
@@ -205,15 +219,22 @@ function ColorField({
 }
 
 function getTimingEffect(effects: Effect[]) {
-  return effects.find((effect): effect is TimingEffect => effect.kind === "timing") ?? initialEditor.effects[0] as TimingEffect;
+  return effects.find((effect): effect is TimingEffect => effect.kind === "timing") ?? { id: "timing-default", kind: "timing", enabled: true, trimStart: 0, trimEnd: 0, reverse: false, speed: 1, loopCount: 0 };
 }
 
 function getTransformEffect(effects: Effect[]) {
-  return effects.find((effect): effect is TransformEffect => effect.kind === "transform") ?? initialEditor.effects[1] as TransformEffect;
+  return effects.find((effect): effect is TransformEffect => effect.kind === "transform") ?? { id: "transform-default", kind: "transform", enabled: true, flipH: false, flipV: false, rotate: 0, scale: 1, cropLeft: 0, cropTop: 0, cropWidth: 100, cropHeight: 100 };
 }
 
-function isUniqueGlobalEffect(kind: EffectKind) {
-  return kind === "timing" || kind === "transform";
+function cloneEffects<T extends Effect>(effects: T[]) {
+  return effects.map((effect) => ({ ...effect }));
+}
+
+function createDefaultEditor() {
+  return {
+    effects: cloneEffects(initialEditor.effects),
+    frameEffects: {},
+  } satisfies EditorState;
 }
 
 function createEffect(kind: EffectKind): Effect {
@@ -407,7 +428,7 @@ function prepareGifTransparency(canvas: HTMLCanvasElement) {
   ctx.putImageData(imageData, 0, 0);
 }
 
-function getOutputSize(project: Project, editor: EditorState) {
+function getOutputSize(project: ProjectAsset, editor: EditorState) {
   const transform = getTransformEffect(editor.effects);
   const sourceWidth = project.width * (transform.cropWidth / 100);
   const sourceHeight = project.height * (transform.cropHeight / 100);
@@ -419,12 +440,12 @@ function getOutputSize(project: Project, editor: EditorState) {
   return { width, height };
 }
 
-function renderFrame(target: HTMLCanvasElement, frame: SourceFrame, project: Project, editor: EditorState) {
+function renderFrame(target: HTMLCanvasElement, frame: SourceFrame, project: ProjectAsset, editor: EditorState, projectEffects: Effect[] = []) {
   const transform = getTransformEffect(editor.effects);
   const source = document.createElement("canvas");
   source.width = project.width;
   source.height = project.height;
-  const effects = [...editor.effects, ...(editor.frameEffects[String(frame.index)] ?? [])];
+  const effects = [...projectEffects, ...editor.effects, ...(editor.frameEffects[String(frame.index)] ?? [])];
   source.getContext("2d")?.putImageData(applyEffectStack(frame.imageData, effects.filter((effect) => effect.kind !== "timing" && effect.kind !== "transform")), 0, 0);
 
   const { width, height } = getOutputSize(project, editor);
@@ -446,9 +467,9 @@ function renderFrame(target: HTMLCanvasElement, frame: SourceFrame, project: Pro
   ctx.restore();
 }
 
-function renderFrameThumbnail(frame: SourceFrame, project: Project, editor: EditorState) {
+function renderFrameThumbnail(frame: SourceFrame, project: ProjectAsset, editor: EditorState, projectEffects: Effect[] = []) {
   const rendered = document.createElement("canvas");
-  renderFrame(rendered, frame, project, editor);
+  renderFrame(rendered, frame, project, editor, projectEffects);
 
   const thumb = document.createElement("canvas");
   thumb.width = 96;
@@ -465,7 +486,7 @@ function renderFrameThumbnail(frame: SourceFrame, project: Project, editor: Edit
   return thumb.toDataURL("image/webp", 0.75);
 }
 
-function getPlayableFrames(project: Project | null, editor: EditorState) {
+function getPlayableFrames(project: ProjectAsset | null, editor: EditorState) {
   if (!project) return [];
   const timing = getTimingEffect(editor.effects);
   const end = timing.trimEnd || project.frames.length - 1;
@@ -475,7 +496,7 @@ function getPlayableFrames(project: Project | null, editor: EditorState) {
   return timing.reverse ? [...trimmed].reverse() : trimmed;
 }
 
-function rangeLabel(project: Project | null, editor: EditorState) {
+function rangeLabel(project: ProjectAsset | null, editor: EditorState) {
   if (!project) return "0 frames";
   const frames = getPlayableFrames(project, editor);
   const timing = getTimingEffect(editor.effects);
@@ -483,21 +504,21 @@ function rangeLabel(project: Project | null, editor: EditorState) {
   return `${frames.length} frames · ${(duration / 1000).toFixed(2)}s`;
 }
 
-function loadSavedEditor() {
-  try {
-    const saved = window.localStorage.getItem(autosaveKey);
-    if (!saved) return initialEditor;
-    const parsed = JSON.parse(saved) as Partial<EditorState> & Record<string, unknown>;
-    if (Array.isArray(parsed.effects)) return { ...initialEditor, ...parsed, frameEffects: parsed.frameEffects ?? {} } as EditorState;
-
-    return initialEditor;
-  } catch {
-    return initialEditor;
-  }
+async function fileToDataUrl(file: File) {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
-async function decodeGif(file: File): Promise<Project> {
-  const buffer = await file.arrayBuffer();
+async function dataUrlToArrayBuffer(dataUrl: string) {
+  const response = await fetch(dataUrl);
+  return await response.arrayBuffer();
+}
+
+async function decodeGifAsset(name: string, buffer: ArrayBuffer, sourceDataUrl: string): Promise<ProjectAsset> {
   const parsed = parseGIF(buffer);
   const decoded = decompressFrames(parsed, true) as Array<{
     dims: { left: number; top: number; width: number; height: number };
@@ -543,12 +564,11 @@ async function decodeGif(file: File): Promise<Project> {
     }
   });
 
-  return { name: file.name, width, height, frames };
+  return { id: crypto.randomUUID(), name, width, height, frames, sourceDataUrl };
 }
 
 function App() {
-  const [project, setProject] = useState<Project | null>(null);
-  const [editor, setEditor] = useState<EditorState>(initialEditor);
+  const [project, setProject] = useState<WorkspaceProject | null>(null);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [status, setStatus] = useState("Import a GIF to begin.");
@@ -562,6 +582,7 @@ function App() {
   const [history, setHistory] = useState<{ past: EditorState[]; future: EditorState[] }>({ past: [], future: [] });
   const [isDragging, setIsDragging] = useState(false);
   const [draggedEffectId, setDraggedEffectId] = useState<string | null>(null);
+  const [draggedAssetId, setDraggedAssetId] = useState<string | null>(null);
   const [colorPickTarget, setColorPickTarget] = useState<ColorPickTarget | null>(null);
   const [effectScope, setEffectScope] = useState<EffectScope>("global");
   const [liveThumbnails, setLiveThumbnails] = useState<Record<number, string>>({});
@@ -572,43 +593,45 @@ function App() {
   const [isPanning, setIsPanning] = useState(false);
   const previewRef = useRef<HTMLCanvasElement>(null);
   const exportPreviewRef = useRef<HTMLCanvasElement>(null);
+  const projectInputRef = useRef<HTMLInputElement>(null);
   const monitorRef = useRef<HTMLDivElement>(null);
   const panStartRef = useRef<{ pointer: PanPoint; pan: PanPoint } | null>(null);
-  const playableFrames = useMemo(() => getPlayableFrames(project, editor), [project, editor]);
-  const outputSize = useMemo(() => (project ? getOutputSize(project, editor) : null), [project, editor]);
+  const activeAsset = useMemo(() => project?.assets.find((asset) => asset.id === project.activeAssetId) ?? null, [project]);
+  const projectEffects = project?.projectEffects ?? [];
+  const editor = useMemo(() => {
+    if (!project || !activeAsset) return initialEditor;
+    return project.editors[activeAsset.id] ?? createDefaultEditor();
+  }, [activeAsset, project]);
+  const playableFrames = useMemo(() => getPlayableFrames(activeAsset, editor), [activeAsset, editor]);
+  const outputSize = useMemo(() => (activeAsset ? getOutputSize(activeAsset, editor) : null), [activeAsset, editor]);
   const selectedFrame = playableFrames[Math.min(currentFrame, Math.max(0, playableFrames.length - 1))];
   const activeFrameKey = selectedFrame ? String(selectedFrame.index) : "";
-  const activeEffects = effectScope === "frame" && activeFrameKey ? editor.frameEffects[activeFrameKey] ?? [] : editor.effects;
+  const activeEffects = effectScope === "project"
+    ? projectEffects
+    : effectScope === "frame" && activeFrameKey
+      ? editor.frameEffects[activeFrameKey] ?? []
+      : editor.effects;
   const timing = getTimingEffect(editor.effects);
-  const canSavePreset = activeEffects.some((effect) => effect.kind !== "timing" && effect.kind !== "transform");
+  const canSavePreset = activeEffects.length > 0;
   const exportBaseName = exportSettings.fileName.trim() || "edited-animation";
 
   useEffect(() => {
-    if (!project) return;
-    const nextEditor = loadSavedEditor();
-    setEditor({
-      ...nextEditor,
-      effects: nextEditor.effects.map((effect) =>
-        effect.kind === "timing"
-          ? { ...effect, trimStart: 0, trimEnd: project.frames.length - 1 }
-          : effect,
-      ),
-    });
+    if (!activeAsset) return;
     setHistory({ past: [], future: [] });
     setCurrentFrame(0);
     setEffectScope("global");
     setLiveThumbnails({});
     setExportSettings((value) => ({
       ...value,
-      fileName: project.name.replace(/\.gif$/i, "") || defaultExportSettings.fileName,
+      fileName: activeAsset.name.replace(/\.gif$/i, "") || defaultExportSettings.fileName,
     }));
     resetViewer();
-  }, [project]);
+  }, [activeAsset?.id]);
 
   useEffect(() => {
-    if (!project) return;
+    if (!project || !activeAsset) return;
     window.localStorage.setItem(autosaveKey, JSON.stringify(editor));
-  }, [editor, project]);
+  }, [activeAsset, editor, project]);
 
   useEffect(() => {
     try {
@@ -620,14 +643,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!project || !selectedFrame || !previewRef.current) return;
-    renderFrame(previewRef.current, selectedFrame, project, editor);
-  }, [project, selectedFrame, editor]);
+    if (!activeAsset || !selectedFrame || !previewRef.current) return;
+    renderFrame(previewRef.current, selectedFrame, activeAsset, editor, projectEffects);
+  }, [activeAsset, selectedFrame, editor, projectEffects]);
 
   useEffect(() => {
-    if (!isExportModalOpen || !project || !selectedFrame || !exportPreviewRef.current) return;
-    renderFrame(exportPreviewRef.current, selectedFrame, project, editor);
-  }, [editor, isExportModalOpen, project, selectedFrame]);
+    if (!isExportModalOpen || !activeAsset || !selectedFrame || !exportPreviewRef.current) return;
+    renderFrame(exportPreviewRef.current, selectedFrame, activeAsset, editor, projectEffects);
+  }, [activeAsset, editor, isExportModalOpen, projectEffects, selectedFrame]);
 
   useEffect(() => {
     if (!outputSize || !monitorRef.current) return;
@@ -656,7 +679,7 @@ function App() {
   }, [currentFrame, isPlaying, playableFrames, timing.speed]);
 
   useEffect(() => {
-    if (!project || playableFrames.length === 0) {
+    if (!activeAsset || playableFrames.length === 0) {
       setLiveThumbnails({});
       return;
     }
@@ -665,7 +688,7 @@ function App() {
     const timer = window.setTimeout(() => {
       const next: Record<number, string> = {};
       playableFrames.forEach((frame) => {
-        if (!cancelled) next[frame.index] = renderFrameThumbnail(frame, project, editor);
+        if (!cancelled) next[frame.index] = renderFrameThumbnail(frame, activeAsset, editor, projectEffects);
       });
       if (!cancelled) setLiveThumbnails(next);
     }, 80);
@@ -674,17 +697,29 @@ function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [editor, playableFrames, project]);
+  }, [activeAsset, editor, playableFrames, projectEffects]);
 
   function updateEditor(next: Partial<EditorState>) {
-    setEditor((value) => {
-      setHistory((current) => ({ past: [...current.past, value].slice(-50), future: [] }));
-      return { ...value, ...next };
+    if (!project || !activeAsset) return;
+    setHistory((current) => ({ past: [...current.past, editor].slice(-50), future: [] }));
+    setProject({
+      ...project,
+      editors: {
+        ...project.editors,
+        [activeAsset.id]: { ...editor, ...next },
+      },
     });
     setDownloadUrl(null);
   }
 
   function updateActiveEffects(effects: Effect[]) {
+    if (effectScope === "project") {
+      if (!project) return;
+      setProject({ ...project, projectEffects: effects });
+      setDownloadUrl(null);
+      return;
+    }
+
     if (effectScope === "frame" && activeFrameKey) {
       updateEditor({ frameEffects: { ...editor.frameEffects, [activeFrameKey]: effects } });
       return;
@@ -700,7 +735,7 @@ function App() {
       return;
     }
 
-    const presetEffects = activeEffects.filter((effect) => effect.kind !== "timing" && effect.kind !== "transform");
+    const presetEffects = activeEffects;
     if (presetEffects.length === 0) {
       setStatus("Add at least one stack effect before saving a preset.");
       return;
@@ -715,10 +750,7 @@ function App() {
   function loadPreset(name: string) {
     const preset = savedPresets[name];
     if (!preset) return;
-    updateActiveEffects([
-      ...activeEffects.filter((effect) => effect.kind === "timing" || effect.kind === "transform"),
-      ...preset.map((effect) => ({ ...effect, id: `${effect.kind}-${crypto.randomUUID()}` } as Effect)),
-    ]);
+    updateActiveEffects(preset.map((effect) => ({ ...effect, id: `${effect.kind}-${crypto.randomUUID()}` } as Effect)));
     setStatus(`Loaded preset ${name}.`);
   }
 
@@ -827,61 +859,190 @@ function App() {
   }
 
   function undo() {
+    if (!project || !activeAsset) return;
     const previous = history.past.at(-1);
     if (!previous) return;
-    setEditor(previous);
+    setProject({
+      ...project,
+      editors: {
+        ...project.editors,
+        [activeAsset.id]: previous,
+      },
+    });
     setHistory({ past: history.past.slice(0, -1), future: [editor, ...history.future] });
     setDownloadUrl(null);
   }
 
   function redo() {
+    if (!project || !activeAsset) return;
     const next = history.future[0];
     if (!next) return;
-    setEditor(next);
+    setProject({
+      ...project,
+      editors: {
+        ...project.editors,
+        [activeAsset.id]: next,
+      },
+    });
     setHistory({ past: [...history.past, editor].slice(-50), future: history.future.slice(1) });
     setDownloadUrl(null);
   }
 
-  async function loadGifFile(file: File | undefined) {
-    if (!file) return;
-    if (file.type !== "image/gif" && !file.name.toLowerCase().endsWith(".gif")) {
-      setStatus("Drop or import a .gif file.");
+  async function appendGifFiles(files: File[]) {
+    const gifFiles = files.filter((file) => file.type === "image/gif" || file.name.toLowerCase().endsWith(".gif"));
+    if (gifFiles.length === 0) {
+      setStatus("Drop or import one or more .gif files.");
       return;
     }
 
-    setStatus(`Decoding ${file.name}...`);
+    setStatus(`Decoding ${gifFiles.length} GIF${gifFiles.length === 1 ? "" : "s"}...`);
     setIsPlaying(false);
     setDownloadUrl(null);
 
     try {
-      const nextProject = await decodeGif(file);
-      setProject(nextProject);
-      setStatus(`Loaded ${nextProject.name}: ${nextProject.frames.length} frames.`);
+      const decodedAssets = await Promise.all(
+        gifFiles.map(async (file) => {
+          const sourceDataUrl = await fileToDataUrl(file);
+          const buffer = await file.arrayBuffer();
+          return await decodeGifAsset(file.name, buffer, sourceDataUrl);
+        }),
+      );
+
+      setProject((current) => {
+        const assets = [...(current?.assets ?? []), ...decodedAssets];
+        const editors = {
+          ...(current?.editors ?? {}),
+          ...Object.fromEntries(decodedAssets.map((asset) => [asset.id, createDefaultEditor()])),
+        };
+
+        return {
+        name: current?.name ?? "Open GIF Studio Project",
+        activeAssetId: current?.activeAssetId ?? decodedAssets[0].id,
+        assets,
+        projectEffects: current?.projectEffects ?? [],
+        editors,
+      } satisfies WorkspaceProject;
+      });
+
+      if (!project && decodedAssets[0]) setCurrentFrame(0);
+      setStatus(`Added ${decodedAssets.length} GIF${decodedAssets.length === 1 ? "" : "s"} to the project.`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to decode GIF.");
+      setStatus(error instanceof Error ? error.message : "Failed to decode GIFs.");
     }
   }
 
   async function handleImport(event: ChangeEvent<HTMLInputElement>) {
-    await loadGifFile(event.target.files?.[0]);
+    await appendGifFiles(Array.from(event.target.files ?? []));
     event.target.value = "";
   }
 
   async function handleDrop(event: DragEvent<HTMLElement>) {
     event.preventDefault();
     setIsDragging(false);
-    if (event.dataTransfer.types.includes("application/x-frameforge-effect")) return;
-    await loadGifFile(event.dataTransfer.files[0]);
+    if (event.dataTransfer.types.includes("application/x-frameforge-effect") || event.dataTransfer.types.includes("application/x-ogs-asset")) return;
+    await appendGifFiles(Array.from(event.dataTransfer.files));
+  }
+
+  async function handleProjectImport(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const saved = JSON.parse(await file.text()) as SavedProject;
+      setStatus(`Loading project ${saved.name}...`);
+      const assets = await Promise.all(
+        saved.assets.map(async (asset) => {
+          const buffer = await dataUrlToArrayBuffer(asset.sourceDataUrl);
+          const decoded = await decodeGifAsset(asset.name, buffer, asset.sourceDataUrl);
+          return { ...decoded, id: asset.id };
+        }),
+      );
+
+      const editors = Object.fromEntries(
+        assets.map((asset) => [asset.id, saved.editors[asset.id] ?? createDefaultEditor()]),
+      );
+
+      setProject({
+        name: saved.name,
+        activeAssetId: saved.activeAssetId || assets[0]?.id || "",
+        assets,
+        projectEffects: saved.projectEffects ?? [],
+        editors,
+      });
+      setStatus(`Loaded project ${saved.name}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to load project file.");
+    }
+
+    event.target.value = "";
+  }
+
+  function saveProjectFile() {
+    if (!project) return;
+    const payload: SavedProject = {
+      name: project.name,
+      activeAssetId: project.activeAssetId,
+      assets: project.assets.map((asset) => ({ id: asset.id, name: asset.name, sourceDataUrl: asset.sourceDataUrl })),
+      projectEffects: project.projectEffects,
+      editors: project.editors,
+    };
+    const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${project.name.replace(/\s+/g, "-").toLowerCase() || "ogs-project"}.ogsp.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function renameAsset(assetId: string, name: string) {
+    if (!project) return;
+    setProject({
+      ...project,
+      assets: project.assets.map((asset) => (asset.id === assetId ? { ...asset, name } : asset)),
+    });
+  }
+
+  function removeAsset(assetId: string) {
+    if (!project) return;
+    const assets = project.assets.filter((asset) => asset.id !== assetId);
+    const { [assetId]: _removed, ...editors } = project.editors;
+    setProject(
+      assets.length === 0
+        ? null
+        : {
+            ...project,
+            activeAssetId: project.activeAssetId === assetId ? assets[0].id : project.activeAssetId,
+            assets,
+            editors,
+          },
+    );
+    if (project.activeAssetId === assetId) {
+      setCurrentFrame(0);
+      setEffectScope("global");
+    }
+  }
+
+  function reorderAssets(sourceId: string, targetId: string) {
+    if (!project || sourceId === targetId) return;
+    const sourceIndex = project.assets.findIndex((asset) => asset.id === sourceId);
+    const targetIndex = project.assets.findIndex((asset) => asset.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const assets = [...project.assets];
+    const [moved] = assets.splice(sourceIndex, 1);
+    assets.splice(targetIndex, 0, moved);
+    setProject({ ...project, assets });
   }
 
   function resetEdits() {
-    if (!project) return;
+    if (!project || !activeAsset) return;
     setHistory((value) => ({ past: [...value.past, editor].slice(-50), future: [] }));
-    setEditor({
-      ...initialEditor,
-      effects: initialEditor.effects.map((effect) =>
-        effect.kind === "timing" ? { ...effect, trimEnd: project.frames.length - 1 } : effect,
-      ),
+    setProject({
+      ...project,
+      editors: {
+        ...project.editors,
+        [activeAsset.id]: createDefaultEditor(),
+      },
     });
     setCurrentFrame(0);
     setDownloadUrl(null);
@@ -889,7 +1050,7 @@ function App() {
   }
 
   function openExportModal() {
-    if (!project) return;
+    if (!activeAsset) return;
     setIsExportModalOpen(true);
   }
 
@@ -899,7 +1060,7 @@ function App() {
   }
 
   function exportGif() {
-    if (!project || playableFrames.length === 0) return;
+    if (!activeAsset || playableFrames.length === 0) return;
     setIsPlaying(false);
     setExportProgress(0);
     setStatus("Rendering GIF export...");
@@ -907,7 +1068,7 @@ function App() {
     setDownloadUrl(null);
     setExportFileSize(null);
 
-    const { width, height } = getOutputSize(project, editor);
+    const { width, height } = getOutputSize(activeAsset, editor);
     const gif = new GIF({
       workers: exportSettings.workers,
       quality: exportSettings.quality,
@@ -922,7 +1083,7 @@ function App() {
     const canvas = document.createElement("canvas");
 
     playableFrames.forEach((frame) => {
-      renderFrame(canvas, frame, project, editor);
+      renderFrame(canvas, frame, activeAsset, editor, projectEffects);
       if (exportSettings.optimizeTransparency) prepareGifTransparency(canvas);
       gif.addFrame(canvas, { copy: true, delay: Math.max(20, frame.delay / timing.speed) });
     });
@@ -938,14 +1099,14 @@ function App() {
     gif.render();
   }
 
-  const canEdit = project !== null;
+  const canEdit = activeAsset !== null;
 
   return (
     <main
       className={isDragging ? "app-shell dragging" : "app-shell"}
       onDragEnter={(event) => {
         event.preventDefault();
-        if (event.dataTransfer.types.includes("application/x-frameforge-effect")) return;
+        if (event.dataTransfer.types.includes("application/x-frameforge-effect") || event.dataTransfer.types.includes("application/x-ogs-asset")) return;
         setIsDragging(true);
       }}
       onDragOver={(event) => event.preventDefault()}
@@ -968,9 +1129,16 @@ function App() {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6h1.5A3.5 3.5 0 0 1 23 9.5v.5A3.5 3.5 0 0 1 19.5 13H18v1a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5V6h12Zm0 2v3h1.5A1.5 1.5 0 0 0 21 9.5v-.5A1.5 1.5 0 0 0 19.5 8H18ZM6 20h12v2H6v-2Z"/></svg>
           </a>
           <label className="button primary">
-            Import GIF
-            <input type="file" accept="image/gif" onChange={handleImport} />
+            Add GIFs
+            <input type="file" accept="image/gif" multiple onChange={handleImport} />
           </label>
+          <label className="button">
+            Load Project
+            <input ref={projectInputRef} type="file" accept="application/json,.json,.ogsp.json" onChange={handleProjectImport} />
+          </label>
+          <button className="button" type="button" disabled={!project} onClick={saveProjectFile}>
+            Save Project
+          </button>
           <button className="button" type="button" disabled={history.past.length === 0} onClick={undo}>
             Undo
           </button>
@@ -997,27 +1165,101 @@ function App() {
           {!collapsedPanels.media && (
             <>
               {project ? (
-                <div className="asset-card">
-                  <span className="asset-icon">GIF</span>
-                  <strong>{project.name}</strong>
-                  <small>{project.width} x {project.height} · {project.frames.length} frames</small>
-                </div>
+                <>
+                  <div className="asset-list">
+                    {project.assets.map((asset) => (
+                      <div
+                        className={[asset.id === project.activeAssetId ? "asset-card active" : "asset-card", draggedAssetId === asset.id ? "dragging" : ""].filter(Boolean).join(" ")}
+                        key={asset.id}
+                        onDragOver={(event) => {
+                          if (!event.dataTransfer.types.includes("application/x-ogs-asset")) return;
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          const sourceId = event.dataTransfer.getData("application/x-ogs-asset") || draggedAssetId;
+                          if (sourceId) reorderAssets(sourceId, asset.id);
+                          setDraggedAssetId(null);
+                        }}
+                      >
+                        <button
+                          className="asset-thumb-button"
+                          type="button"
+                          onClick={() => {
+                            setProject({ ...project, activeAssetId: asset.id });
+                            setCurrentFrame(0);
+                          }}
+                        >
+                          <img className="asset-thumb" src={asset.frames[0]?.thumbnail} alt="" />
+                        </button>
+                        <div className="asset-meta">
+                          <div className="asset-header">
+                            <div className="asset-row">
+                              <span
+                                className="drag-handle asset-drag"
+                                draggable
+                                aria-label={`Drag ${asset.name}`}
+                                role="button"
+                                onDragStart={(event) => {
+                                  event.stopPropagation();
+                                  setIsDragging(false);
+                                  setDraggedAssetId(asset.id);
+                                  event.dataTransfer.effectAllowed = "move";
+                                  event.dataTransfer.setData("application/x-ogs-asset", asset.id);
+                                  event.dataTransfer.setData("text/plain", asset.id);
+                                }}
+                                onDragEnd={() => setDraggedAssetId(null)}
+                              >
+                                ::
+                              </span>
+                              <span className="asset-icon">GIF</span>
+                              {asset.id === project.activeAssetId && <span className="asset-badge">Active</span>}
+                            </div>
+                            <button className="mini-button danger asset-remove" type="button" onClick={() => removeAsset(asset.id)}>
+                              Remove
+                            </button>
+                          </div>
+                          <input
+                            className="asset-name-input"
+                            type="text"
+                            value={asset.name}
+                            onChange={(event) => renameAsset(asset.id, event.target.value)}
+                          />
+                          <button
+                            className="asset-open"
+                            type="button"
+                            onClick={() => {
+                              setProject({ ...project, activeAssetId: asset.id });
+                              setCurrentFrame(0);
+                            }}
+                          >
+                            {asset.width} x {asset.height} · {asset.frames.length} frames
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="readout-grid">
+                    <span>Project</span>
+                    <strong>{project.name}</strong>
+                    <span>Active GIF</span>
+                    <strong>{activeAsset?.name ?? "-"}</strong>
+                    <span>Selection</span>
+                    <strong>{rangeLabel(activeAsset, editor)}</strong>
+                    <span>Output</span>
+                    <strong>{outputSize ? `${outputSize.width} x ${outputSize.height}` : "-"}</strong>
+                    <span>Loop</span>
+                    <strong>{timing.loopCount === 0 ? "Forever" : `${timing.loopCount}x`}</strong>
+                  </div>
+                </>
               ) : (
                 <label className="drop-copy">
                   <strong>No source loaded</strong>
-                  <span>Import or drop an animated GIF to unlock the monitor, timeline, inspector, and effects controls.</span>
-                  <input type="file" accept="image/gif" onChange={handleImport} />
+                  <span>Import or drop one or more animated GIFs to build a project.</span>
+                  <input type="file" accept="image/gif" multiple onChange={handleImport} />
                 </label>
               )}
-
-              <div className="readout-grid">
-                <span>Selection</span>
-                <strong>{rangeLabel(project, editor)}</strong>
-                <span>Output</span>
-                <strong>{outputSize ? `${outputSize.width} x ${outputSize.height}` : "-"}</strong>
-                <span>Loop</span>
-                <strong>{timing.loopCount === 0 ? "Forever" : `${timing.loopCount}x`}</strong>
-              </div>
             </>
           )}
         </aside>
@@ -1039,7 +1281,7 @@ function App() {
           {!collapsedPanels.monitor && (
             <>
               <div
-                className={["monitor", project ? "pannable" : "", isPanning ? "panning" : ""].filter(Boolean).join(" ")}
+                className={["monitor", activeAsset ? "pannable" : "", isPanning ? "panning" : ""].filter(Boolean).join(" ")}
                 ref={monitorRef}
                 onPointerDown={startPan}
                 onPointerMove={movePan}
@@ -1047,7 +1289,7 @@ function App() {
                 onPointerCancel={stopPan}
                 onWheel={wheelZoom}
               >
-                {project ? (
+                {activeAsset ? (
                   <div
                     className="viewer-canvas-wrap"
                     style={{ transform: `translate(${viewerPan.x}px, ${viewerPan.y}px)` }}
@@ -1059,9 +1301,7 @@ function App() {
                       style={outputSize ? { width: `${outputSize.width * fitScale * viewerZoom}px`, height: `${outputSize.height * fitScale * viewerZoom}px` } : undefined}
                     />
                   </div>
-                ) : (
-                  <div className="empty-monitor">Preview Monitor</div>
-                )}
+                ) : null}
               </div>
               <div className="transport">
                 <button className="button" type="button" disabled={!canEdit} onClick={() => setCurrentFrame(0)}>
@@ -1096,9 +1336,14 @@ function App() {
             <h2>Effects</h2>
           </div>
 
-          <fieldset disabled={!canEdit}>
-            <legend>Effect Stack</legend>
+          <div className={canEdit ? "stack-panel" : "stack-panel disabled"}>
+            <div className="stack-panel-head">
+              <span className="stack-label">Effect Stack</span>
+            </div>
             <div className="scope-toggle">
+              <button className={effectScope === "project" ? "toggle active" : "toggle"} type="button" onClick={() => setEffectScope("project")}>
+                Project
+              </button>
               <button className={effectScope === "global" ? "toggle active" : "toggle"} type="button" onClick={() => setEffectScope("global")}>
                 Whole GIF
               </button>
@@ -1112,11 +1357,6 @@ function App() {
                 value=""
                 onChange={(event) => {
                   if (!event.target.value) return;
-                  if (effectScope === "global" && isUniqueGlobalEffect(event.target.value as EffectKind) && activeEffects.some((effect) => effect.kind === event.target.value)) {
-                    setStatus(`${event.target.value} is already in the global stack.`);
-                    event.target.value = "";
-                    return;
-                  }
                   addEffect(event.target.value as EffectKind);
                   event.target.value = "";
                 }}
@@ -1200,7 +1440,7 @@ function App() {
                       <button className="mini-button" type="button" onClick={() => moveEffect(effect.id, -1)} disabled={index === 0}>Up</button>
                       <button className="mini-button" type="button" onClick={() => moveEffect(effect.id, 1)} disabled={index === activeEffects.length - 1}>Down</button>
                       <button className="mini-button" type="button" onClick={() => updateEffect(effect.id, { enabled: !effect.enabled })}>{effect.enabled ? "Off" : "On"}</button>
-                      <button className="mini-button danger" type="button" onClick={() => removeEffect(effect.id)} disabled={isUniqueGlobalEffect(effect.kind)}>Remove</button>
+                      <button className="mini-button danger" type="button" onClick={() => removeEffect(effect.id)}>Remove</button>
                     </div>
                   </div>
 
@@ -1208,11 +1448,11 @@ function App() {
                     <>
                       <label>
                         Trim start
-                        <input type="range" min="0" max={Math.max(0, (project?.frames.length ?? 1) - 1)} value={effect.trimStart} onChange={(event) => updateEffect(effect.id, { trimStart: Number(event.target.value) })} />
+                        <input type="range" min="0" max={Math.max(0, (activeAsset?.frames.length ?? 1) - 1)} value={effect.trimStart} onChange={(event) => updateEffect(effect.id, { trimStart: Number(event.target.value) })} />
                       </label>
                       <label>
                         Trim end
-                        <input type="range" min="0" max={Math.max(0, (project?.frames.length ?? 1) - 1)} value={effect.trimEnd} onChange={(event) => updateEffect(effect.id, { trimEnd: Number(event.target.value) })} />
+                        <input type="range" min="0" max={Math.max(0, (activeAsset?.frames.length ?? 1) - 1)} value={effect.trimEnd} onChange={(event) => updateEffect(effect.id, { trimEnd: Number(event.target.value) })} />
                       </label>
                       <label>Speed {effect.speed.toFixed(2)}x<input type="range" min="0.25" max="4" step="0.25" value={effect.speed} onChange={(event) => updateEffect(effect.id, { speed: Number(event.target.value) })} /></label>
                       <label>Loop count<input type="number" min="0" max="20" value={effect.loopCount} onChange={(event) => updateEffect(effect.id, { loopCount: Number(event.target.value) })} /></label>
@@ -1287,7 +1527,7 @@ function App() {
                 </section>
               ))}
             </div>
-          </fieldset>
+          </div>
         </aside>
       </section>
 
@@ -1295,7 +1535,7 @@ function App() {
         <div className="timeline-head">
           <strong>Timeline</strong>
           <div className="viewer-controls">
-            <span>{project ? `Frame ${Math.min(currentFrame + 1, playableFrames.length)} / ${playableFrames.length}` : "Waiting for media"}</span>
+            <span>{activeAsset ? `Frame ${Math.min(currentFrame + 1, playableFrames.length)} / ${playableFrames.length}` : "Waiting for media"}</span>
             <button className="mini-button" type="button" onClick={() => setCollapsedPanels((value) => ({ ...value, timeline: !value.timeline }))}>
               {collapsedPanels.timeline ? "Open" : "Collapse"}
             </button>
