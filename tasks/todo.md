@@ -210,6 +210,9 @@ Implemented:
 - Effect stack presets can be saved to and loaded from local storage.
 - Export now opens a dedicated modal with file name, quality, worker count, dithering, transparency optimization, render progress, and the final download action.
 - The old inline transport download button has been removed; download now happens from the export flow.
+- Export modal now includes a live render preview of the current frame.
+- Rebranded to Open GIF Studio (OGS), with GitHub and Buy Me a Coffee links in the top bar.
+- Project was initialized as git, committed, and published to a new GitHub repository.
 
 Verified:
 
