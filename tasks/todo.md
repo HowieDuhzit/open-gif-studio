@@ -195,7 +195,6 @@ Current redesign focus:
 - [ ] Verify the redesign with `npm run build`.
 
 Implemented:
-
 - Vite + React + TypeScript app scaffold.
 - Classic editor layout with media bin, monitor, inspector, transport, and timeline strip.
 - GIF import and decoding with `gifuct-js`.
@@ -235,6 +234,8 @@ Implemented:
 - UI facelift rebuilt the app around a modern minimalist industrial command bar, flatter panel system, focused preview stage, compact media bin, cleaner timeline, and denser effect controls.
 - Removed low-value panel collapse controls, repeated Magnific proxy hints, oversized project readout details, and decorative topbar branding.
 - Added a production Node static/proxy server plus Dockerfile and `docker-compose.yml` so Coolify can deploy the app without losing the Magnific API proxy in production.
+- Export now uses the media bin asset names for file naming (already implemented).
+- Added bulk export feature to export all project GIFs as a ZIP file using JSZip.
 
 Verified:
 

@@ -10,9 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/jszip": "^3.4.0",
     "@vitejs/plugin-react": "latest",
     "gif.js": "latest",
     "gifuct-js": "latest",
+    "jszip": "^3.10.1",
     "react": "latest",
     "react-dom": "latest",
     "typescript": "latest",

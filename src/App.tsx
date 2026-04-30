@@ -1,5 +1,6 @@
 import { ChangeEvent, DragEvent, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import GIF from "gif.js";
+import JSZip from "jszip";
 import { decompressFrames, parseGIF } from "gifuct-js";
 
 type SourceFrame = {
@@ -667,6 +668,7 @@ function App() {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [exportFileSize, setExportFileSize] = useState<number | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isBulkExporting, setIsBulkExporting] = useState(false);
   const [isIconModalOpen, setIsIconModalOpen] = useState(false);
   const [exportSettings, setExportSettings] = useState<ExportSettings>(defaultExportSettings);
   const [iconSearchTerm, setIconSearchTerm] = useState("");
@@ -1323,6 +1325,67 @@ function App() {
     gif.render();
   }
 
+  async function bulkExportGif() {
+    if (!project || project.assets.length === 0) return;
+    setIsBulkExporting(true);
+    setStatus("Starting bulk export...");
+
+    const zip = new JSZip();
+    const total = project.assets.length;
+    let completed = 0;
+
+    for (const asset of project.assets) {
+      completed++;
+      setStatus(`Bulk export: ${completed}/${total} - ${asset.name}...`);
+      setExportProgress(completed / total);
+
+      const editor = project.editors[asset.id] ?? createDefaultEditor();
+      const playable = getPlayableFrames(asset, editor);
+      const { width, height } = getOutputSize(asset, editor);
+      const canvas = document.createElement("canvas");
+      const gif = new GIF({
+        workers: exportSettings.workers,
+        quality: exportSettings.quality,
+        width,
+        height,
+        workerScript,
+        repeat: getTimingEffect(editor.effects).loopCount,
+        background: "#ff00ff",
+        transparent: transparencyKeyNumber,
+        dither: exportSettings.dither,
+      });
+
+      playable.forEach((frame) => {
+        renderFrame(canvas, frame, asset, editor, project.projectEffects);
+        if (exportSettings.optimizeTransparency) prepareGifTransparency(canvas);
+        gif.addFrame(canvas, { copy: true, delay: Math.max(20, frame.delay / getTimingEffect(editor.effects).speed) });
+      });
+
+      const blob = await new Promise<Blob>((resolve) => {
+        gif.on("finished", resolve);
+        gif.render();
+      });
+
+      const baseName = asset.name.replace(/\.gif$/i, "") || "animation";
+      zip.file(`${baseName}.gif`, blob);
+    }
+
+    const zipBlob = await zip.generateAsync({ type: "blob" }, (metadata) => {
+      setExportProgress(metadata.percent / 100);
+    });
+
+    const url = URL.createObjectURL(zipBlob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${project.name.replace(/\s+/g, "-").toLowerCase() || "ogs-project"}-export.zip`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    setExportProgress(null);
+    setIsBulkExporting(false);
+    setStatus(`Bulk export complete: ${(zipBlob.size / 1024 / 1024).toFixed(2)} MB.`);
+  }
+
   const canEdit = activeAsset !== null;
   const effectScopeLabel = effectScope === "project" ? "project" : effectScope === "frame" ? "frame" : "whole GIF";
 
@@ -1360,6 +1423,9 @@ function App() {
             </label>
             <button className="button export" type="button" disabled={!canEdit} onClick={openExportModal}>
               Export
+            </button>
+            <button className="button export" type="button" disabled={!project || project.assets.length === 0 || isBulkExporting} onClick={bulkExportGif}>
+              {isBulkExporting ? `Exporting ${Math.round((exportProgress ?? 0) * 100)}%` : "Export All"}
             </button>
           </div>
           <div className="command-group">
