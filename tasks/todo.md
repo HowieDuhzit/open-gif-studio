@@ -186,6 +186,14 @@ Current implementation focus:
 - [ ] Download selected icons as GIFs and add them into the current project via the existing import path.
 - [ ] Keep drag/drop disabled while any modal is open and verify with `npm run build`.
 
+Current redesign focus:
+
+- [ ] Rebuild the UI around a modern minimalist industrial visual system.
+- [ ] Reduce redundant panel chrome, repeated helper text, and decorative branding.
+- [ ] Keep the core editor interactions intact: import, media bin, preview, effects, timeline, export, icon browser.
+- [ ] Preserve accessibility, visible focus, responsive behavior, and modal drag/drop guards.
+- [ ] Verify the redesign with `npm run build`.
+
 Implemented:
 
 - Vite + React + TypeScript app scaffold.
@@ -224,6 +232,9 @@ Implemented:
 - Projects can now be saved to and loaded from `.ogsp.json` files containing source GIFs and edit state.
 - Media bin now includes a Magnific animated icon browser modal backed by a local Vite proxy using `MAGNIFIC_API_KEY`; selected animated icons download as GIFs and are added through the normal project import path.
 - Drag-and-drop is now disabled while any modal is open, covering both export and the animated icon browser.
+- UI facelift rebuilt the app around a modern minimalist industrial command bar, flatter panel system, focused preview stage, compact media bin, cleaner timeline, and denser effect controls.
+- Removed low-value panel collapse controls, repeated Magnific proxy hints, oversized project readout details, and decorative topbar branding.
+- Added a production Node static/proxy server plus Dockerfile and `docker-compose.yml` so Coolify can deploy the app without losing the Magnific API proxy in production.
 
 Verified:
 

@@ -89,6 +89,7 @@ type ExportSettings = {
 
 type MagnificIconOrder = "recent" | "relevance";
 type MagnificIconStyleFilter = "all" | "basic-accent-lineal-color" | "basic-accent-outline";
+type ThemeMode = "dark" | "light";
 
 type MagnificIcon = {
   id: number;
@@ -123,6 +124,7 @@ const initialEditor: EditorState = {
 const workerScript = new URL("gif.js/dist/gif.worker.js", import.meta.url).href;
 const autosaveKey = "frameforge-editor-state";
 const presetStorageKey = "frameforge-effect-presets";
+const themeStorageKey = "ogs-theme-mode";
 const transparencyKey = { r: 255, g: 0, b: 255 };
 const transparencyKeyNumber = 0xff00ff;
 const initialMagnificPagination: MagnificPagination = { current_page: 1, per_page: 24, last_page: 1, total: 0 };
@@ -508,13 +510,67 @@ function renderFrameThumbnail(frame: SourceFrame, project: ProjectAsset, editor:
   const ctx = thumb.getContext("2d");
   if (!ctx) return frame.thumbnail;
 
-  ctx.fillStyle = "#080b10";
-  ctx.fillRect(0, 0, thumb.width, thumb.height);
   const scale = Math.min(thumb.width / rendered.width, thumb.height / rendered.height);
   const width = rendered.width * scale;
   const height = rendered.height * scale;
   ctx.drawImage(rendered, (thumb.width - width) / 2, (thumb.height - height) / 2, width, height);
-  return thumb.toDataURL("image/webp", 0.75);
+  return thumb.toDataURL("image/png");
+}
+
+function getOpaqueBounds(canvas: HTMLCanvasElement) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const { width, height } = canvas;
+  const data = ctx.getImageData(0, 0, width, height).data;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (data[(y * width + x) * 4 + 3] === 0) continue;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (maxX < minX || maxY < minY) return null;
+  return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
+function renderAssetThumbnail(frame: SourceFrame, project: ProjectAsset, editor: EditorState, projectEffects: Effect[] = []) {
+  const rendered = document.createElement("canvas");
+  renderFrame(rendered, frame, project, editor, projectEffects);
+
+  const thumb = document.createElement("canvas");
+  thumb.width = 52;
+  thumb.height = 52;
+  const ctx = thumb.getContext("2d");
+  if (!ctx) return frame.thumbnail;
+
+  const bounds = getOpaqueBounds(rendered);
+  if (!bounds) return thumb.toDataURL("image/png");
+
+  const padding = 2;
+  const scale = Math.min((thumb.width - padding * 2) / bounds.width, (thumb.height - padding * 2) / bounds.height);
+  const width = bounds.width * scale;
+  const height = bounds.height * scale;
+  ctx.drawImage(
+    rendered,
+    bounds.x,
+    bounds.y,
+    bounds.width,
+    bounds.height,
+    (thumb.width - width) / 2,
+    (thumb.height - height) / 2,
+    width,
+    height,
+  );
+
+  return thumb.toDataURL("image/png");
 }
 
 function getPlayableFrames(project: ProjectAsset | null, editor: EditorState) {
@@ -599,6 +655,10 @@ async function decodeGifAsset(name: string, buffer: ArrayBuffer, sourceDataUrl: 
 }
 
 function App() {
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const saved = window.localStorage.getItem(themeStorageKey);
+    return saved === "light" ? "light" : "dark";
+  });
   const [project, setProject] = useState<WorkspaceProject | null>(null);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -626,7 +686,7 @@ function App() {
   const [colorPickTarget, setColorPickTarget] = useState<ColorPickTarget | null>(null);
   const [effectScope, setEffectScope] = useState<EffectScope>("global");
   const [liveThumbnails, setLiveThumbnails] = useState<Record<number, string>>({});
-  const [collapsedPanels, setCollapsedPanels] = useState({ media: false, monitor: false, timeline: false });
+  const [liveAssetThumbnails, setLiveAssetThumbnails] = useState<Record<string, string>>({});
   const [viewerZoom, setViewerZoom] = useState(1);
   const [viewerPan, setViewerPan] = useState<PanPoint>({ x: 0, y: 0 });
   const [fitScale, setFitScale] = useState(1);
@@ -663,9 +723,18 @@ function App() {
   }, [iconResults, iconStyleFilter]);
 
   useEffect(() => {
-    if (!activeAsset) return;
+    document.documentElement.dataset.theme = themeMode;
+    window.localStorage.setItem(themeStorageKey, themeMode);
+  }, [themeMode]);
+
+  useEffect(() => {
+    if (!activeAsset) {
+      setIsPlaying(false);
+      return;
+    }
     setHistory({ past: [], future: [] });
     setCurrentFrame(0);
+    setIsPlaying(true);
     setEffectScope("global");
     setLiveThumbnails({});
     setExportSettings((value) => ({
@@ -757,6 +826,29 @@ function App() {
       window.clearTimeout(timer);
     };
   }, [activeAsset, editor, playableFrames, projectEffects]);
+
+  useEffect(() => {
+    if (!project || project.assets.length === 0) {
+      setLiveAssetThumbnails({});
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const next: Record<string, string> = {};
+      project.assets.forEach((asset) => {
+        const firstFrame = asset.frames[0];
+        if (!firstFrame || cancelled) return;
+        next[asset.id] = renderAssetThumbnail(firstFrame, asset, project.editors[asset.id] ?? createDefaultEditor(), project.projectEffects);
+      });
+      if (!cancelled) setLiveAssetThumbnails(next);
+    }, 80);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [project]);
 
   function updateEditor(next: Partial<EditorState>) {
     if (!project || !activeAsset) return;
@@ -984,6 +1076,7 @@ function App() {
       });
 
       if (!project && decodedAssets[0]) setCurrentFrame(0);
+      if (decodedAssets.length > 0) setIsPlaying(true);
       setStatus(`Added ${decodedAssets.length} GIF${decodedAssets.length === 1 ? "" : "s"} to the project.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to decode GIFs.");
@@ -1087,6 +1180,7 @@ function App() {
         projectEffects: saved.projectEffects ?? [],
         editors,
       });
+      setIsPlaying(assets.length > 0);
       setStatus(`Loaded project ${saved.name}.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to load project file.");
@@ -1230,9 +1324,11 @@ function App() {
   }
 
   const canEdit = activeAsset !== null;
+  const effectScopeLabel = effectScope === "project" ? "project" : effectScope === "frame" ? "frame" : "whole GIF";
 
   return (
     <main
+      data-theme={themeMode}
       className={isDragging ? "app-shell dragging" : "app-shell"}
       onDragEnter={(event) => {
         if (!isDragDropEnabled) return;
@@ -1252,61 +1348,53 @@ function App() {
     >
       {isDragging && <div className="drop-overlay">Drop GIF to load</div>}
       <header className="topbar">
-        <div>
-          <p className="eyebrow">OGS</p>
-          <h1>Open GIF Studio</h1>
+        <div className="brand-block">
+          <h1>OGS</h1>
+          <span>Open GIF Studio</span>
         </div>
         <div className="toolbar">
-          <a className="icon-link" href={repoUrl} target="_blank" rel="noreferrer" aria-label="Open GitHub repository" title="GitHub">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-1.96c-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.76 2.7 1.25 3.35.96.1-.74.4-1.25.72-1.54-2.56-.29-5.24-1.28-5.24-5.72 0-1.26.45-2.3 1.2-3.12-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.2a11.1 11.1 0 0 1 5.79 0c2.2-1.51 3.17-1.2 3.17-1.2.63 1.59.23 2.76.11 3.05.75.82 1.2 1.86 1.2 3.12 0 4.45-2.69 5.42-5.26 5.7.42.37.78 1.08.78 2.18v3.23c0 .31.2.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
-          </a>
-          <a className="icon-link" href={donationUrl} target="_blank" rel="noreferrer" aria-label="Buy me a coffee" title="Buy me a coffee">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6h1.5A3.5 3.5 0 0 1 23 9.5v.5A3.5 3.5 0 0 1 19.5 13H18v1a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5V6h12Zm0 2v3h1.5A1.5 1.5 0 0 0 21 9.5v-.5A1.5 1.5 0 0 0 19.5 8H18ZM6 20h12v2H6v-2Z"/></svg>
-          </a>
-          <label className="button primary">
-            Add GIFs
-            <input type="file" accept="image/gif" multiple onChange={handleImport} />
-          </label>
-          <label className="button">
-            Load Project
-            <input ref={projectInputRef} type="file" accept="application/json,.json,.ogsp.json" onChange={handleProjectImport} />
-          </label>
-          <button className="button" type="button" disabled={!project} onClick={saveProjectFile}>
-            Save Project
-          </button>
-          <button className="button" type="button" disabled={history.past.length === 0} onClick={undo}>
-            Undo
-          </button>
-          <button className="button" type="button" disabled={history.future.length === 0} onClick={redo}>
-            Redo
-          </button>
-          <button className="button" type="button" disabled={!canEdit} onClick={resetEdits}>
-            Reset edits
-          </button>
-          <button className="button export" type="button" disabled={!canEdit} onClick={openExportModal}>
-            Export GIF
-          </button>
+          <div className="command-group primary-actions">
+            <label className="button primary">
+              Add GIFs
+              <input type="file" accept="image/gif" multiple onChange={handleImport} />
+            </label>
+            <button className="button export" type="button" disabled={!canEdit} onClick={openExportModal}>
+              Export
+            </button>
+          </div>
+          <div className="command-group">
+            <label className="button quiet">
+              Load
+              <input ref={projectInputRef} type="file" accept="application/json,.json,.ogsp.json" onChange={handleProjectImport} />
+            </label>
+            <button className="button quiet" type="button" disabled={!project} onClick={saveProjectFile}>Save</button>
+            <button className="button quiet" type="button" disabled={history.past.length === 0} onClick={undo}>Undo</button>
+            <button className="button quiet" type="button" disabled={history.future.length === 0} onClick={redo}>Redo</button>
+            <button className="button quiet" type="button" disabled={!canEdit} onClick={resetEdits}>Reset</button>
+          </div>
+          <div className="command-group utility-links">
+            <button className="theme-switch" type="button" onClick={() => setThemeMode((value) => (value === "dark" ? "light" : "dark"))} aria-label={`Switch to ${themeMode === "dark" ? "light" : "dark"} mode`}>
+              <span>{themeMode === "dark" ? "Dark" : "Light"}</span>
+              <strong>{themeMode === "dark" ? "Light" : "Dark"}</strong>
+            </button>
+            <a className="icon-link" href={repoUrl} target="_blank" rel="noreferrer" aria-label="Open GitHub repository" title="GitHub">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-1.96c-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.76 2.7 1.25 3.35.96.1-.74.4-1.25.72-1.54-2.56-.29-5.24-1.28-5.24-5.72 0-1.26.45-2.3 1.2-3.12-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.2a11.1 11.1 0 0 1 5.79 0c2.2-1.51 3.17-1.2 3.17-1.2.63 1.59.23 2.76.11 3.05.75.82 1.2 1.86 1.2 3.12 0 4.45-2.69 5.42-5.26 5.7.42.37.78 1.08.78 2.18v3.23c0 .31.2.67.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+            </a>
+            <a className="icon-link" href={donationUrl} target="_blank" rel="noreferrer" aria-label="Buy me a coffee" title="Buy me a coffee">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6h1.5A3.5 3.5 0 0 1 23 9.5v.5A3.5 3.5 0 0 1 19.5 13H18v1a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5V6h12Zm0 2v3h1.5A1.5 1.5 0 0 0 21 9.5v-.5A1.5 1.5 0 0 0 19.5 8H18ZM6 20h12v2H6v-2Z"/></svg>
+            </a>
+          </div>
         </div>
       </header>
 
       <section className="workspace">
-        <aside className={collapsedPanels.media ? "panel media-bin collapsed" : "panel media-bin"}>
+        <aside className="panel media-bin">
           <div className="panel-head">
             <h2>Media Bin</h2>
-            <button className="mini-button" type="button" onClick={() => setCollapsedPanels((value) => ({ ...value, media: !value.media }))}>
-              {collapsedPanels.media ? "Open" : "Collapse"}
-            </button>
           </div>
-          {!collapsedPanels.media && (
-            <>
+          <>
               {project ? (
                 <>
-                  <div className="asset-actions">
-                    <button className="button" type="button" onClick={openIconModal}>
-                      Browse Animated Icons
-                    </button>
-                    <small className="asset-browser-hint">Uses the local Magnific proxy. Set `MAGNIFIC_API_KEY` on the server to enable results.</small>
-                  </div>
                   <div className="asset-list">
                     {project.assets.map((asset) => (
                       <div
@@ -1334,7 +1422,7 @@ function App() {
                             setCurrentFrame(0);
                           }}
                         >
-                          <img className="asset-thumb" src={asset.frames[0]?.thumbnail} alt="" />
+                          <img className="asset-thumb" src={liveAssetThumbnails[asset.id] ?? asset.frames[0]?.thumbnail} alt="" />
                         </button>
                         <div className="asset-meta">
                           <div className="asset-header">
@@ -1384,17 +1472,18 @@ function App() {
                       </div>
                     ))}
                   </div>
-                  <div className="readout-grid">
-                    <span>Project</span>
-                    <strong>{project.name}</strong>
-                    <span>Active GIF</span>
-                    <strong>{activeAsset?.name ?? "-"}</strong>
+                  <div className="readout-grid compact">
                     <span>Selection</span>
                     <strong>{rangeLabel(activeAsset, editor)}</strong>
                     <span>Output</span>
                     <strong>{outputSize ? `${outputSize.width} x ${outputSize.height}` : "-"}</strong>
                     <span>Loop</span>
                     <strong>{timing.loopCount === 0 ? "Forever" : `${timing.loopCount}x`}</strong>
+                  </div>
+                  <div className="asset-actions empty">
+                    <button className="button" type="button" onClick={openIconModal}>
+                      Animated Icons
+                    </button>
                   </div>
                 </>
               ) : (
@@ -1407,16 +1496,14 @@ function App() {
               {!project && (
                 <div className="asset-actions empty">
                   <button className="button" type="button" onClick={openIconModal}>
-                    Browse Animated Icons
+                    Animated Icons
                   </button>
-                  <small className="asset-browser-hint">Uses the local Magnific proxy. Set `MAGNIFIC_API_KEY` on the server to enable results.</small>
                 </div>
               )}
             </>
-          )}
         </aside>
 
-        <section className={collapsedPanels.monitor ? "monitor-stage collapsed" : "monitor-stage"}>
+        <section className="monitor-stage">
           <div className="monitor-head">
             <span>{status}</span>
             <div className="viewer-controls">
@@ -1425,13 +1512,9 @@ function App() {
               <span>{Math.round(fitScale * viewerZoom * 100)}%</span>
               <button className="mini-button" type="button" disabled={!canEdit} onClick={() => zoomViewer(viewerZoom + 0.25)}>+</button>
               <button className="mini-button" type="button" disabled={!canEdit} onClick={resetViewer}>Fit</button>
-              <button className="mini-button" type="button" onClick={() => setCollapsedPanels((value) => ({ ...value, monitor: !value.monitor }))}>
-                {collapsedPanels.monitor ? "Open" : "Collapse"}
-              </button>
             </div>
           </div>
-          {!collapsedPanels.monitor && (
-            <>
+          <>
               <div
                 className={["monitor", activeAsset ? "pannable" : "", isPanning ? "panning" : ""].filter(Boolean).join(" ")}
                 ref={monitorRef}
@@ -1480,7 +1563,6 @@ function App() {
                 </button>
               </div>
             </>
-          )}
         </section>
 
         <aside className="panel inspector">
@@ -1489,9 +1571,6 @@ function App() {
           </div>
 
           <div className={canEdit ? "stack-panel" : "stack-panel disabled"}>
-            <div className="stack-panel-head">
-              <span className="stack-label">Effect Stack</span>
-            </div>
             <div className="scope-toggle">
               <button className={effectScope === "project" ? "toggle active" : "toggle"} type="button" onClick={() => setEffectScope("project")}>
                 Project
@@ -1503,9 +1582,9 @@ function App() {
                 Frame {selectedFrame ? selectedFrame.index + 1 : "-"}
               </button>
             </div>
-            <label>
-              Add effect
+            <div className="effect-tools">
               <select
+                aria-label="Add effect"
                 value=""
                 onChange={(event) => {
                   if (!event.target.value) return;
@@ -1525,27 +1604,25 @@ function App() {
                 <option value="vignette">Vignette</option>
                 <option value="noise">Noise</option>
               </select>
-            </label>
 
-            <div className="preset-row">
-              <input type="text" placeholder="Preset name" value={presetName} onChange={(event) => setPresetName(event.target.value)} />
-              <button className="mini-button" type="button" disabled={!canSavePreset} onClick={savePreset}>Save preset</button>
-            </div>
-            <label>
-              Load preset
-              <select value="" onChange={(event) => {
+              <div className="preset-row">
+                <input aria-label="Preset name" type="text" placeholder="Preset name" value={presetName} onChange={(event) => setPresetName(event.target.value)} />
+                <button className="mini-button" type="button" disabled={!canSavePreset} onClick={savePreset}>Save</button>
+              </div>
+
+              <select aria-label="Load preset" value="" onChange={(event) => {
                 if (!event.target.value) return;
                 loadPreset(event.target.value);
                 event.target.value = "";
               }}>
-                <option value="">Choose preset...</option>
+                <option value="">Load preset...</option>
                 {Object.keys(savedPresets).sort().map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
-            </label>
+            </div>
 
             <div className="effect-stack">
               {activeEffects.length === 0 && (
-                <div className="empty-stack">No {effectScope === "frame" ? "frame" : "global"} effects yet. Add one above.</div>
+                <div className="empty-stack">No {effectScopeLabel} effects yet.</div>
               )}
               {activeEffects.map((effect, index) => (
                 <section
@@ -1686,18 +1763,14 @@ function App() {
         </aside>
       </section>
 
-      <section className={collapsedPanels.timeline ? "timeline collapsed" : "timeline"}>
+      <section className="timeline">
         <div className="timeline-head">
           <strong>Timeline</strong>
           <div className="viewer-controls">
             <span>{activeAsset ? `Frame ${Math.min(currentFrame + 1, playableFrames.length)} / ${playableFrames.length}` : "Waiting for media"}</span>
-            <button className="mini-button" type="button" onClick={() => setCollapsedPanels((value) => ({ ...value, timeline: !value.timeline }))}>
-              {collapsedPanels.timeline ? "Open" : "Collapse"}
-            </button>
           </div>
         </div>
-        {!collapsedPanels.timeline && (
-          <>
+        <>
             <input
               className="scrubber"
               type="range"
@@ -1728,7 +1801,6 @@ function App() {
               ))}
             </div>
           </>
-        )}
       </section>
 
       {isExportModalOpen && (
