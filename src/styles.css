@@ -147,12 +147,16 @@ h2 {
 .app-shell {
   position: relative;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) minmax(108px, 18vh);
+  grid-template-rows: auto minmax(0, 1fr) minmax(108px, 18vh) auto;
   width: 100%;
   height: 100%;
   gap: 1px;
   padding: 10px;
   background: color-mix(in srgb, var(--bg) 90%, transparent);
+}
+
+.app-shell:has(.timeline.collapsed) {
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .app-shell.dragging::after {
@@ -229,7 +233,7 @@ h2 {
   padding-left: 8px;
 }
 
-.primary-actions {
+.toolbar > .command-group:first-child {
   border-left: 0;
   padding-left: 0;
 }
@@ -278,6 +282,7 @@ h2 {
 
 .button.primary,
 .button.export,
+.mini-button.active,
 .toggle.active {
   border-color: var(--accent);
   background: var(--accent);
@@ -294,7 +299,8 @@ h2 {
 }
 
 .button input,
-.drop-copy input {
+.drop-copy input,
+.media-add-button input {
   display: none;
 }
 
@@ -304,7 +310,30 @@ h2 {
   font-size: 0.62rem;
 }
 
+.panel-collapse-button {
+  width: 28px;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.icon-only-button {
+  min-width: 34px;
+  padding: 0;
+}
+
+.button-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
 .mini-button.danger {
+  color: var(--danger);
+}
+
+.button.danger {
+  border-color: color-mix(in srgb, var(--danger), transparent 45%);
   color: var(--danger);
 }
 
@@ -319,34 +348,35 @@ h2 {
 }
 
 .theme-switch {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: inline-flex;
   align-items: center;
+  gap: 4px;
   min-height: 34px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
   border-radius: 999px;
-  background: var(--button-bg);
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
   color: var(--muted);
-  padding: 2px;
+  padding: 3px;
   cursor: pointer;
 }
 
-.theme-switch span,
-.theme-switch strong {
+.theme-chip {
   display: grid;
-  min-height: 26px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   border-radius: 999px;
-  padding: 0 9px;
-  font-family: var(--mono);
-  font-size: 0.58rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  color: var(--muted);
 }
 
-.theme-switch strong {
+.theme-chip.active {
   background: var(--accent);
   color: var(--black);
+}
+
+.theme-chip .button-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .icon-link svg {
@@ -360,6 +390,18 @@ h2 {
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(270px, 340px);
   min-height: 0;
   gap: 1px;
+}
+
+.workspace.media-collapsed {
+  grid-template-columns: auto minmax(0, 1fr) minmax(270px, 340px);
+}
+
+.workspace.effects-collapsed {
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) auto;
+}
+
+.workspace.media-collapsed.effects-collapsed {
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
 .panel,
@@ -384,6 +426,47 @@ h2 {
   flex-direction: column;
 }
 
+.panel.collapsed {
+  width: max-content;
+  min-width: 0;
+  padding: 10px;
+}
+
+.panel.collapsed .panel-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 140px;
+  margin: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+  gap: 8px;
+}
+
+.panel.collapsed .panel-head h2 {
+  order: 2;
+  writing-mode: vertical-rl;
+  margin-top: 0;
+}
+
+.panel.collapsed .panel-head-actions {
+  order: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.timeline.collapsed {
+  min-height: 0;
+}
+
+.timeline.collapsed .timeline-head {
+  border-bottom: 0;
+}
+
 .panel-head,
 .monitor-head,
 .timeline-head,
@@ -396,6 +479,17 @@ h2 {
   color: var(--muted);
   font-family: var(--mono);
   font-size: 0.68rem;
+}
+
+.panel-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.media-add-button {
+  position: relative;
+  overflow: hidden;
 }
 
 .panel-head {
@@ -468,6 +562,29 @@ h2 {
   align-content: start;
 }
 
+.asset-group,
+.asset-group-list {
+  display: grid;
+  gap: 8px;
+}
+
+.asset-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.asset-group-head strong {
+  color: var(--text);
+  font-size: inherit;
+}
+
 .asset-card,
 .drop-copy,
 .readout-grid,
@@ -487,6 +604,10 @@ h2 {
   align-items: start;
   gap: 9px;
   padding: 8px;
+}
+
+.asset-card.hidden {
+  opacity: 0.56;
 }
 
 .asset-card.active {
@@ -528,6 +649,28 @@ h2 {
 .asset-meta {
   min-width: 0;
   gap: 6px;
+}
+
+.asset-badges-row {
+  flex-wrap: wrap;
+}
+
+.asset-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.asset-card-actions .mini-button {
+  min-width: 28px;
+  width: 28px;
+  padding: 0;
+}
+
+.asset-badge.muted {
+  border-color: var(--line);
+  color: var(--muted);
 }
 
 .asset-header,
@@ -611,6 +754,31 @@ select {
   color: var(--accent);
 }
 
+.project-status-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) repeat(3, auto);
+  gap: 12px;
+  align-items: center;
+  min-height: 36px;
+  border: 1px solid var(--line);
+  padding: 7px 10px;
+  background: var(--panel);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+}
+
+.project-status-bar > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-status-bar strong {
+  color: var(--text);
+}
+
 .readout-grid {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -669,6 +837,28 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.monitor-status-wrap {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+
+.progress-strip {
+  width: 100%;
+  height: 5px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.progress-strip-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 120ms ease;
 }
 
 .viewer-controls {
@@ -1103,6 +1293,12 @@ input[type="range"] {
   height: auto;
 }
 
+.export-preview-stage img {
+  max-width: 100%;
+  max-height: 248px;
+  object-fit: contain;
+}
+
 .export-summary {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1270,6 +1466,11 @@ input[type="range"] {
   .command-group {
     border-left: 0;
     padding-left: 0;
+  }
+
+  .project-status-bar {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 
   .button,

@@ -69,7 +69,7 @@ Build a web app GIF editor that feels like a classic video editor: media bin, pr
 - [x] Add reverse playback.
 - [x] Add speed/frame delay controls.
 - [x] Add loop count setting.
-- [ ] Add duplicate/delete frame or selected range.
+- [x] Add duplicate/delete frame or selected range.
 - [x] Add undo/redo for timeline operations.
 
 ### Phase 3: Transform Tools
@@ -77,8 +77,8 @@ Build a web app GIF editor that feels like a classic video editor: media bin, pr
 - [x] Add horizontal and vertical flip.
 - [x] Add rotate by free angle.
 - [x] Add crop and resize.
-- [ ] Add rounded corners and canvas/background color.
-- [ ] Add border/frame controls.
+- [x] Add rounded corners and canvas/background color.
+- [x] Add border/frame controls.
 
 ### Phase 4: Color Tools
 
@@ -86,7 +86,7 @@ Build a web app GIF editor that feels like a classic video editor: media bin, pr
 - [x] Add brightness and contrast sliders.
 - [x] Add hue, saturation, and lightness sliders.
 - [x] Add tint color picker with intensity.
-- [ ] Add before/after preview toggle.
+- [x] Add before/after preview toggle.
 
 ### Phase 5: Filters And Effects
 
@@ -95,18 +95,18 @@ Build a web app GIF editor that feels like a classic video editor: media bin, pr
 - [x] Add reorderable effect stack.
 - [x] Add browser-side background removal as color-key removal with tolerance and softness.
 - [x] Add targeted color replacement effect with source color, replacement color, tolerance, and softness.
-- [ ] Add posterize and solarize.
-- [ ] Add emboss and oil-paint-style effect if performance allows.
-- [ ] Add wave, swirl, and implode distortions as advanced effects.
-- [ ] Add Instagram-like presets: Gotham, Lomo, Toaster, Vignette, Polaroid, Nashville.
+- [x] Add posterize and solarize.
+- [x] Add emboss and oil-paint-style effect if performance allows.
+- [x] Add wave, swirl, and implode distortions as advanced effects.
+- [x] Add Instagram-like presets: Gotham, Lomo, Toaster, Vignette, Polaroid, Nashville.
 
 ### Phase 6: Export
 
-- [ ] Add export modal with dimensions, FPS, duration, palette/quality, loop count, and estimated file size.
+- [x] Add export modal with dimensions, FPS, duration, palette/quality, loop count, and estimated file size.
 - [x] Export edited GIF in-browser for MVP.
 - [x] Show render progress.
-- [ ] Preview final output before download.
-- [ ] Add output optimization pass if library support allows.
+- [x] Preview final output before download.
+- [x] Add output optimization pass if library support allows.
 
 ### Phase 7: Server Render Path
 
@@ -179,6 +179,19 @@ Use a classic video editor visual language without copying a specific product:
 
 Browser-only MVP implementation started and verified with `npm run build`.
 
+## Completion Sprint Plan
+
+- [x] Add non-destructive frame duplicate/delete controls using a stable frame order in editor state.
+- [x] Add a before/after preview toggle that shows the raw source frame without changing exports.
+- [x] Add canvas styling controls for background color, transparent background, rounded corners, border width, and border color.
+- [x] Expand export modal metadata with duration, average FPS, loop count, estimated size, final rendered preview, and best-effort cancel handling.
+- [x] Add lightweight filters: posterize, solarize, and named color presets.
+- [x] Add advanced filters: emboss and oil-paint-style approximation with conservative defaults.
+- [x] Add distortion effects: wave, swirl, and implode with performance-safe defaults.
+- [ ] Add server render API endpoints, queue, native render container dependencies, job progress, cancellation, cleanup, and download links after browser effect model is stable.
+
+Server render decision needed: implement as a real backend queue with native FFmpeg/ImageMagick/Gifsicle inside this repo, or finish all browser-only editor gaps first and leave server rendering for a separate backend sprint.
+
 Current implementation focus:
 
 - [ ] Add a Magnific animated icon browser modal in the media bin.
@@ -236,18 +249,25 @@ Implemented:
 - Added a production Node static/proxy server plus Dockerfile and `docker-compose.yml` so Coolify can deploy the app without losing the Magnific API proxy in production.
 - Export now uses the media bin asset names for file naming (already implemented).
 - Added bulk export feature to export all project GIFs as a ZIP file using JSZip.
+- Completed an optimization/security pass: deduped GIF export rendering, fixed disabled timing/transform effects, sanitized export filenames, added project/import guardrails, hardened the production proxy, pinned dependencies, and moved the runtime container to a non-root user.
+- Finished browser-side roadmap gaps: frame duplicate/delete, before/after preview, canvas styling, export metadata/final preview/cancel handling, posterize, solarize, named color presets, emboss, oil paint, wave, swirl, and implode.
+- Optimized interactive effect editing by requestAnimationFrame-coalescing preview renders, deferring/chunking thumbnail regeneration, incrementally updating timeline and media-bin thumbnails as idle renders complete, limiting timeline refreshes to the active frame neighborhood, debouncing autosave, and throttling undo snapshots during slider drags.
+- Fixed visible thumbnail freshness by updating the active timeline frame and media-bin thumbnail from the already-rendered preview canvas, then added collapsible media bin, effects panel, and timeline controls.
+- Refined the media bin workflow: assets can now be hidden from bulk export, assets can opt out of project-wide effects, the animated icon action moved to the top bar, the old media info box became a bottom project status bar, and the media card layout was simplified.
+- Large imports now decode through web workers with bounded parallelism and show a real progress bar, keeping the UI responsive and improving multi-file import throughput.
 
 Verified:
 
 - `npm run build` passes.
+- `npm audit` passes with 0 vulnerabilities.
+- `node --check server.mjs` passes.
+- `docker compose config` validates; the missing local `MAGNIFIC_API_KEY` warning is expected outside Coolify.
+- `docker build . -t open-gif-studio:optimization-check` passes.
 - Fixed GIF frame reconstruction to alpha-composite transparent patches instead of erasing previous frame content.
 - Added drag-and-drop GIF loading and clickable empty-state import.
 - Improved transparency handling for background removal with checkerboard preview and transparent GIF export keying.
 
 Known gaps:
 
-- No duplicate/delete frame operation yet.
-- No export cancellation yet.
-- No before/after preview toggle yet.
-- Sharpen and advanced filters/effects are not implemented yet.
 - Background removal is color-key based, not AI person/object segmentation.
+- Server render path is intentionally deferred per scope decision: browser gaps first, backend queue/native render sprint next.
