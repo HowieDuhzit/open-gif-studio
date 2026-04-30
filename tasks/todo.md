@@ -255,6 +255,7 @@ Implemented:
 - Fixed visible thumbnail freshness by updating the active timeline frame and media-bin thumbnail from the already-rendered preview canvas, then added collapsible media bin, effects panel, and timeline controls.
 - Refined the media bin workflow: assets can now be hidden from bulk export, assets can opt out of project-wide effects, the animated icon action moved to the top bar, the old media info box became a bottom project status bar, and the media card layout was simplified.
 - Large imports now decode through web workers with bounded parallelism and show a real progress bar, keeping the UI responsive and improving multi-file import throughput.
+- Import now supports additional image formats beyond GIF, including animated WebP/APNG where the browser decoder supports them, plus related still image formats like PNG, JPEG, and AVIF.
 
 Verified:
 

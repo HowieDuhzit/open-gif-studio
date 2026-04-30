@@ -105,10 +105,32 @@ function magnificProxyPlugin(apiKey: string): Plugin {
   };
 }
 
+function setSecurityHeaders(response: ServerResponse) {
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.setHeader("Referrer-Policy", "no-referrer");
+  response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  response.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://api.magnific.com; worker-src 'self' blob: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+  );
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   return {
-    plugins: [react(), magnificProxyPlugin(env.MAGNIFIC_API_KEY?.trim() ?? "")],
+    plugins: [
+      react(),
+      magnificProxyPlugin(env.MAGNIFIC_API_KEY?.trim() ?? ""),
+      {
+        name: "security-headers",
+        configureServer(server) {
+          server.middlewares.use((_req, res, next) => {
+            setSecurityHeaders(res);
+            next();
+          });
+        },
+      },
+    ],
   };
 });

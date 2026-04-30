@@ -106,6 +106,11 @@ type ImportProgress = {
   overallProgress: number;
 };
 
+type GiphyUploadResult = {
+  id: string | null;
+  url: string | null;
+};
+
 type WorkerDecodedFrame = {
   index: number;
   delay: number;
@@ -148,6 +153,7 @@ const initialEditor: EditorState = {
 
 const workerScript = new URL("gif.js/dist/gif.worker.js", import.meta.url).href;
 const gifDecodeWorkerUrl = new URL("./gifDecodeWorker.ts", import.meta.url);
+const supportedImageAccept = "image/gif,image/png,image/apng,image/webp,image/avif,image/jpeg,image/jpg";
 const autosaveKey = "frameforge-editor-state";
 const presetStorageKey = "frameforge-effect-presets";
 const themeStorageKey = "ogs-theme-mode";
@@ -238,7 +244,7 @@ function hslToRgb(h: number, s: number, l: number) {
 }
 
 function stripGifExtension(name: string) {
-  return name.replace(/\.gif$/i, "");
+  return name.replace(/\.(gif|apng|png|webp|avif|jpe?g)$/i, "");
 }
 
 function normalizeAssetName(name: string, fallback = "animation") {
@@ -276,8 +282,8 @@ function validateSavedProject(value: unknown): SavedProject {
     activeAssetId: typeof value.activeAssetId === "string" ? value.activeAssetId : "",
     assets: assets.map((asset, index) => {
       if (!isRecord(asset)) throw new Error(`Invalid project asset at index ${index}.`);
-      if (typeof asset.sourceDataUrl !== "string" || !asset.sourceDataUrl.startsWith("data:image/gif")) {
-        throw new Error(`Project asset ${index + 1} is missing GIF source data.`);
+      if (typeof asset.sourceDataUrl !== "string" || !asset.sourceDataUrl.startsWith("data:image/")) {
+        throw new Error(`Project asset ${index + 1} is missing image source data.`);
       }
 
       return {
@@ -979,6 +985,22 @@ function scheduleIdleWork(callback: () => void, timeout = 1000) {
   return () => globalThis.clearTimeout(id);
 }
 
+function inferImageMimeType(name: string, mimeType: string) {
+  if (mimeType.startsWith("image/")) return mimeType;
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".apng") || lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".avif")) return "image/avif";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  return mimeType || "application/octet-stream";
+}
+
+function isSupportedImageFile(file: File) {
+  const type = inferImageMimeType(file.name, file.type);
+  return ["image/gif", "image/png", "image/webp", "image/avif", "image/jpeg"].includes(type);
+}
+
 async function fileToDataUrl(file: File) {
   return await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -1048,16 +1070,112 @@ async function createSourceFramesFromWorkerFrames(width: number, height: number,
   return builtFrames;
 }
 
-async function decodeGifAsset(name: string, buffer: ArrayBuffer, sourceDataUrl: string, onProgress?: (progress: number) => void): Promise<ProjectAsset> {
-  if (buffer.byteLength > maxGifFileBytes) throw new Error(`${name} is too large to import.`);
-  const { width, height, frames: decodedFrames } = await decodeGifFramesInWorker(name, buffer, (progress) => onProgress?.(progress * 0.82));
-  if (width <= 0 || height <= 0 || width > maxGifDimension || height > maxGifDimension || width * height > maxGifPixels) {
-    throw new Error(`${name} exceeds the supported GIF dimensions.`);
-  }
-  if (decodedFrames.length > maxGifFrames) throw new Error(`${name} has too many frames to import.`);
-  const frames = await createSourceFramesFromWorkerFrames(width, height, decodedFrames, (progress) => onProgress?.(0.82 + progress * 0.18));
+async function decodeAnimatedImageAsset(name: string, buffer: ArrayBuffer, sourceDataUrl: string, mimeType: string, onProgress?: (progress: number) => void): Promise<ProjectAsset> {
+  if (!("ImageDecoder" in window)) throw new Error(`${name} needs a browser with animated ${mimeType.replace("image/", "").toUpperCase()} decoding support.`);
 
+  const decoder = new ImageDecoder({ data: buffer, type: mimeType });
+  await decoder.tracks.ready;
+  const track = decoder.tracks.selectedTrack;
+  const frameCount = track?.frameCount ?? 1;
+  const firstDecoded = await decoder.decode({ frameIndex: 0 });
+  const width = firstDecoded.image.displayWidth;
+  const height = firstDecoded.image.displayHeight;
+
+  if (width <= 0 || height <= 0 || width > maxGifDimension || height > maxGifDimension || width * height > maxGifPixels) {
+    throw new Error(`${name} exceeds the supported image dimensions.`);
+  }
+  if (frameCount > maxGifFrames) throw new Error(`${name} has too many frames to import.`);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas is not available in this browser.");
+
+  const frames: SourceFrame[] = [];
+  for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+    const decoded = frameIndex === 0 ? firstDecoded : await decoder.decode({ frameIndex });
+    const videoFrame = decoded.image;
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(videoFrame, 0, 0, width, height);
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const durationMs = Math.max(20, Math.round(Number((videoFrame as VideoFrame & { duration?: number }).duration ?? 100000) / 1000));
+    frames.push({
+      index: frameIndex,
+      imageData,
+      delay: durationMs,
+      thumbnail: canvas.toDataURL("image/webp", 0.7),
+    });
+    videoFrame.close();
+
+    if (onProgress && (frameIndex === frameCount - 1 || frameIndex % 4 === 0)) {
+      onProgress((frameIndex + 1) / frameCount);
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    }
+  }
+
+  decoder.close();
   return { id: crypto.randomUUID(), name: normalizeAssetName(name), width, height, frames, sourceDataUrl, hidden: false, ignoreProjectEffects: false };
+}
+
+async function decodeStaticImageAsset(name: string, buffer: ArrayBuffer, sourceDataUrl: string, mimeType: string): Promise<ProjectAsset> {
+  const blob = new Blob([buffer], { type: mimeType });
+  const bitmap = await createImageBitmap(blob);
+  const width = bitmap.width;
+  const height = bitmap.height;
+
+  if (width <= 0 || height <= 0 || width > maxGifDimension || height > maxGifDimension || width * height > maxGifPixels) {
+    throw new Error(`${name} exceeds the supported image dimensions.`);
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas is not available in this browser.");
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const thumbnail = canvas.toDataURL("image/webp", 0.7);
+
+  return {
+    id: crypto.randomUUID(),
+    name: normalizeAssetName(name),
+    width,
+    height,
+    frames: [{ index: 0, imageData, delay: 100, thumbnail }],
+    sourceDataUrl,
+    hidden: false,
+    ignoreProjectEffects: false,
+  };
+}
+
+async function decodeImageAsset(name: string, buffer: ArrayBuffer, sourceDataUrl: string, mimeType: string, onProgress?: (progress: number) => void): Promise<ProjectAsset> {
+  if (buffer.byteLength > maxGifFileBytes) throw new Error(`${name} is too large to import.`);
+  if (mimeType === "image/gif") {
+    const { width, height, frames: decodedFrames } = await decodeGifFramesInWorker(name, buffer, (progress) => onProgress?.(progress * 0.82));
+    if (width <= 0 || height <= 0 || width > maxGifDimension || height > maxGifDimension || width * height > maxGifPixels) {
+      throw new Error(`${name} exceeds the supported GIF dimensions.`);
+    }
+    if (decodedFrames.length > maxGifFrames) throw new Error(`${name} has too many frames to import.`);
+    const frames = await createSourceFramesFromWorkerFrames(width, height, decodedFrames, (progress) => onProgress?.(0.82 + progress * 0.18));
+
+    return { id: crypto.randomUUID(), name: normalizeAssetName(name), width, height, frames, sourceDataUrl, hidden: false, ignoreProjectEffects: false };
+  }
+
+  if (["image/png", "image/webp", "image/avif"].includes(mimeType)) {
+    try {
+      return await decodeAnimatedImageAsset(name, buffer, sourceDataUrl, mimeType, onProgress);
+    } catch {
+      return await decodeStaticImageAsset(name, buffer, sourceDataUrl, mimeType);
+    }
+  }
+
+  if (mimeType === "image/jpeg") return await decodeStaticImageAsset(name, buffer, sourceDataUrl, mimeType);
+
+  throw new Error(`${name} is not a supported image format.`);
 }
 
 function App() {
@@ -1075,6 +1193,9 @@ function App() {
   const [exportFileSize, setExportFileSize] = useState<number | null>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isBulkExporting, setIsBulkExporting] = useState(false);
+  const [isUploadingToGiphy, setIsUploadingToGiphy] = useState(false);
+  const [giphyTags, setGiphyTags] = useState("");
+  const [giphyUploadResult, setGiphyUploadResult] = useState<GiphyUploadResult | null>(null);
   const [isBeforePreview, setIsBeforePreview] = useState(false);
   const [isIconModalOpen, setIsIconModalOpen] = useState(false);
   const [exportSettings, setExportSettings] = useState<ExportSettings>(defaultExportSettings);
@@ -1171,6 +1292,7 @@ function App() {
       ...value,
       fileName: safeFileBase(activeAsset.name, defaultExportSettings.fileName),
     }));
+    setGiphyTags((value) => value || safeFileBase(activeAsset.name, defaultExportSettings.fileName).replace(/\s+/g, ", "));
     resetViewer();
   }, [activeAsset?.id]);
 
@@ -1523,44 +1645,44 @@ function App() {
     setDownloadUrl(null);
   }
 
-  async function appendGifFiles(files: File[]) {
-    const gifFiles = files.filter((file) => file.type === "image/gif" || file.name.toLowerCase().endsWith(".gif"));
-    if (gifFiles.length === 0) {
-      setStatus("Drop or import one or more .gif files.");
+  async function appendMediaFiles(files: File[]) {
+    const imageFiles = files.filter(isSupportedImageFile);
+    if (imageFiles.length === 0) {
+      setStatus("Drop or import GIF, APNG, WebP, AVIF, PNG, or JPEG files.");
       return;
     }
 
-    const oversized = gifFiles.find((file) => file.size > maxGifFileBytes);
+    const oversized = imageFiles.find((file) => file.size > maxGifFileBytes);
     if (oversized) {
       setStatus(`${oversized.name} is too large to import.`);
       return;
     }
 
-    setStatus(`Decoding ${gifFiles.length} GIF${gifFiles.length === 1 ? "" : "s"}...`);
+    setStatus(`Decoding ${imageFiles.length} image${imageFiles.length === 1 ? "" : "s"}...`);
     setIsPlaying(false);
     setDownloadUrl(null);
     setImportProgress({
       completedFiles: 0,
-      totalFiles: gifFiles.length,
-      currentFileName: gifFiles[0]?.name ?? "",
+      totalFiles: imageFiles.length,
+      currentFileName: imageFiles[0]?.name ?? "",
       currentFileProgress: 0,
       overallProgress: 0,
     });
 
     try {
-      const fileProgress = gifFiles.map(() => 0);
-      const decodedAssets = new Array<ProjectAsset>(gifFiles.length);
-      const concurrency = Math.min(gifFiles.length, Math.max(1, Math.min(4, Math.floor((navigator.hardwareConcurrency || 4) / 2))));
+      const fileProgress = imageFiles.map(() => 0);
+      const decodedAssets = new Array<ProjectAsset>(imageFiles.length);
+      const concurrency = Math.min(imageFiles.length, Math.max(1, Math.min(4, Math.floor((navigator.hardwareConcurrency || 4) / 2))));
       let nextFileIndex = 0;
 
       const updateProgress = (fileIndex: number, currentFileProgress: number, currentFileName: string) => {
         fileProgress[fileIndex] = currentFileProgress;
         setImportProgress({
           completedFiles: fileProgress.filter((progress) => progress >= 1).length,
-          totalFiles: gifFiles.length,
+          totalFiles: imageFiles.length,
           currentFileName,
           currentFileProgress,
-          overallProgress: fileProgress.reduce((sum, progress) => sum + progress, 0) / gifFiles.length,
+          overallProgress: fileProgress.reduce((sum, progress) => sum + progress, 0) / imageFiles.length,
         });
       };
 
@@ -1568,13 +1690,14 @@ function App() {
         while (true) {
           const index = nextFileIndex;
           nextFileIndex += 1;
-          if (index >= gifFiles.length) return;
+          if (index >= imageFiles.length) return;
 
-          const file = gifFiles[index];
+          const file = imageFiles[index];
+          const mimeType = inferImageMimeType(file.name, file.type);
           updateProgress(index, 0, file.name);
           const sourceDataUrl = await fileToDataUrl(file);
           const buffer = await file.arrayBuffer();
-          decodedAssets[index] = await decodeGifAsset(file.name, buffer, sourceDataUrl, (currentFileProgress) => {
+          decodedAssets[index] = await decodeImageAsset(file.name, buffer, sourceDataUrl, mimeType, (currentFileProgress) => {
             updateProgress(index, currentFileProgress, file.name);
           });
           updateProgress(index, 1, file.name);
@@ -1599,16 +1722,16 @@ function App() {
 
       if (!project && decodedAssets[0]) setCurrentFrame(0);
       if (decodedAssets.length > 0) setIsPlaying(true);
-      setStatus(`Added ${decodedAssets.length} GIF${decodedAssets.length === 1 ? "" : "s"} to the project.`);
+      setStatus(`Added ${decodedAssets.length} image${decodedAssets.length === 1 ? "" : "s"} to the project.`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to decode GIFs.");
+      setStatus(error instanceof Error ? error.message : "Failed to decode images.");
     } finally {
       setImportProgress(null);
     }
   }
 
   async function handleImport(event: ChangeEvent<HTMLInputElement>) {
-    await appendGifFiles(Array.from(event.target.files ?? []));
+    await appendMediaFiles(Array.from(event.target.files ?? []));
     event.target.value = "";
   }
 
@@ -1617,7 +1740,7 @@ function App() {
     setIsDragging(false);
     if (!isDragDropEnabled) return;
     if (event.dataTransfer.types.includes("application/x-frameforge-effect") || event.dataTransfer.types.includes("application/x-ogs-asset")) return;
-    await appendGifFiles(Array.from(event.dataTransfer.files));
+    await appendMediaFiles(Array.from(event.dataTransfer.files));
   }
 
   async function loadMagnificIcons(page = 1, append = false) {
@@ -1667,7 +1790,7 @@ function App() {
       const fileName = safeName.toLowerCase().endsWith(".gif") ? safeName : `${safeName}.gif`;
       const file = new File([blob], fileName, { type: blob.type || "image/gif" });
 
-      await appendGifFiles([file]);
+      await appendMediaFiles([file]);
       setIsIconModalOpen(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : `Failed to add ${icon.name}.`;
@@ -1694,7 +1817,8 @@ function App() {
       const assets: ProjectAsset[] = [];
       for (const asset of saved.assets) {
         const buffer = await dataUrlToArrayBuffer(asset.sourceDataUrl);
-        const decoded = await decodeGifAsset(asset.name, buffer, asset.sourceDataUrl);
+        const mimeType = asset.sourceDataUrl.match(/^data:([^;,]+)/)?.[1] || inferImageMimeType(asset.name, "");
+        const decoded = await decodeImageAsset(asset.name, buffer, asset.sourceDataUrl, mimeType);
         assets.push({ ...decoded, id: asset.id, hidden: asset.hidden ?? false, ignoreProjectEffects: asset.ignoreProjectEffects ?? false });
       }
 
@@ -1859,6 +1983,33 @@ function App() {
   function closeExportModal() {
     if (exportProgress !== null) return;
     setIsExportModalOpen(false);
+  }
+
+  async function uploadToGiphy() {
+    if (!downloadUrl) return;
+    setIsUploadingToGiphy(true);
+    setGiphyUploadResult(null);
+    setStatus("Uploading GIF to GIPHY...");
+
+    try {
+      const blob = await fetch(downloadUrl).then((response) => response.blob());
+      const formData = new FormData();
+      formData.set("file", new File([blob], `${exportBaseName}.gif`, { type: "image/gif" }));
+      if (giphyTags.trim()) formData.set("tags", giphyTags.trim());
+
+      const response = await fetch("/api/giphy/upload", { method: "POST", body: formData });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message || "Failed to upload GIF to GIPHY.");
+
+      const id = typeof payload?.data?.id === "string" ? payload.data.id : null;
+      const url = id ? `https://giphy.com/gifs/${id}` : null;
+      setGiphyUploadResult({ id, url });
+      setStatus(id ? `Uploaded to GIPHY: ${id}` : "Uploaded to GIPHY.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to upload GIF to GIPHY.");
+    } finally {
+      setIsUploadingToGiphy(false);
+    }
   }
 
   async function exportGif() {
@@ -2087,7 +2238,7 @@ function App() {
           <div className="panel-head">
             <h2>Media Bin</h2>
             <div className="panel-head-actions">
-              {!isMediaBinCollapsed && <label className="mini-button icon-only-button media-add-button" aria-label="Add GIFs" title="Add GIFs"><Icon name="plus" /><input type="file" accept="image/gif" multiple onChange={handleImport} /></label>}
+              {!isMediaBinCollapsed && <label className="mini-button icon-only-button media-add-button" aria-label="Add media" title="Add media"><Icon name="plus" /><input type="file" accept={supportedImageAccept} multiple onChange={handleImport} /></label>}
               {!isMediaBinCollapsed && <button className="mini-button icon-only-button" type="button" aria-label="Open animated icons" title="Animated Icons" onClick={openIconModal}><Icon name="sparkles" /></button>}
               <button className="mini-button panel-collapse-button" type="button" aria-label={isMediaBinCollapsed ? "Open media bin" : "Collapse media bin"} title={isMediaBinCollapsed ? "Open media bin" : "Collapse media bin"} onClick={() => setIsMediaBinCollapsed((value) => !value)}>
                 {isMediaBinCollapsed ? "›" : "‹"}
@@ -2123,8 +2274,8 @@ function App() {
               ) : (
                 <label className="drop-copy">
                   <strong>No source loaded</strong>
-                  <span>Import or drop one or more animated GIFs to build a project.</span>
-                  <input type="file" accept="image/gif" multiple onChange={handleImport} />
+                  <span>Import or drop GIF, APNG, WebP, AVIF, PNG, or JPEG files to build a project.</span>
+                  <input type="file" accept={supportedImageAccept} multiple onChange={handleImport} />
                 </label>
               )}
             </>}
@@ -2530,6 +2681,10 @@ function App() {
                 <input type="checkbox" checked={exportSettings.optimizeTransparency} onChange={(event) => setExportSettings((value) => ({ ...value, optimizeTransparency: event.target.checked }))} />
                 <span>Optimize transparency for smaller GIFs</span>
               </label>
+              <label>
+                GIPHY tags
+                <input type="text" value={giphyTags} placeholder="reaction, ui, gif" onChange={(event) => setGiphyTags(event.target.value)} />
+              </label>
             </div>
 
             <div className="export-summary">
@@ -2573,6 +2728,14 @@ function App() {
               {downloadUrl && (
                 <a className="button download" href={downloadUrl} download={`${exportBaseName}.gif`}>
                   Download GIF
+                </a>
+              )}
+              <button className="button quiet" type="button" disabled={!downloadUrl || isUploadingToGiphy || exportProgress !== null} onClick={() => void uploadToGiphy()}>
+                {isUploadingToGiphy ? "Uploading to GIPHY..." : "Upload to GIPHY"}
+              </button>
+              {giphyUploadResult?.url && (
+                <a className="button download" href={giphyUploadResult.url} target="_blank" rel="noreferrer">
+                  Open on GIPHY
                 </a>
               )}
             </div>

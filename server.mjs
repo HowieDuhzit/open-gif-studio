@@ -8,7 +8,9 @@ const __dirname = path.dirname(__filename);
 const distDir = path.join(__dirname, "dist");
 const port = Number(process.env.PORT || 3000);
 const magnificApiKey = process.env.MAGNIFIC_API_KEY?.trim() ?? "";
+const giphyApiKey = process.env.GIPHY_API_KEY?.trim() ?? "";
 const maxAssetBytes = 25 * 1024 * 1024;
+const maxGiphyUploadBytes = 100 * 1024 * 1024;
 const upstreamTimeoutMs = 15000;
 
 const mimeTypes = {
@@ -30,7 +32,7 @@ function setSecurityHeaders(response) {
   response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   response.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://api.magnific.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://api.magnific.com; worker-src 'self' blob: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   );
 }
 
@@ -73,6 +75,54 @@ async function readResponseWithLimit(response, limitBytes) {
   const buffer = Buffer.from(await response.arrayBuffer());
   if (buffer.byteLength > limitBytes) throw new Error("Magnific asset is too large.");
   return buffer;
+}
+
+async function readFormData(request) {
+  const method = request.method || "GET";
+  const init = method === "GET" || method === "HEAD"
+    ? { method, headers: request.headers }
+    : { method, headers: request.headers, body: request, duplex: "half" };
+  const webRequest = new Request(`http://${request.headers.host || "localhost"}${request.url || "/"}`, init);
+  return await webRequest.formData();
+}
+
+async function handleGiphyUpload(request, response) {
+  if (request.url !== "/api/giphy/upload" || request.method !== "POST") return false;
+
+  if (!giphyApiKey) {
+    sendJson(response, 500, { message: "Missing GIPHY_API_KEY in the server environment." });
+    return true;
+  }
+
+  try {
+    const formData = await readFormData(request);
+    const file = formData.get("file");
+    if (!(file instanceof File)) {
+      sendJson(response, 400, { message: "A GIF file is required for GIPHY upload." });
+      return true;
+    }
+
+    if (file.size > maxGiphyUploadBytes) {
+      sendJson(response, 400, { message: "GIF exceeds GIPHY's 100MB upload limit." });
+      return true;
+    }
+
+    const upstreamForm = new FormData();
+    upstreamForm.set("api_key", giphyApiKey);
+    upstreamForm.set("file", file, file.name || "open-gif-studio.gif");
+    const tags = formData.get("tags");
+    if (typeof tags === "string" && tags.trim()) upstreamForm.set("tags", tags.trim());
+
+    const upstream = await fetchWithTimeout("https://upload.giphy.com/v1/gifs", { method: "POST", body: upstreamForm });
+    const text = await upstream.text();
+    response.statusCode = upstream.status;
+    response.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json; charset=utf-8");
+    response.end(text);
+    return true;
+  } catch (error) {
+    sendJson(response, 500, { message: error instanceof Error ? error.message : "GIPHY upload failed." });
+    return true;
+  }
 }
 
 async function handleMagnificProxy(requestUrl, response) {
@@ -186,6 +236,7 @@ async function serveStatic(requestUrl, response) {
 createServer(async (request, response) => {
   setSecurityHeaders(response);
   const requestUrl = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
+  if (await handleGiphyUpload(request, response)) return;
   if (await handleMagnificProxy(requestUrl, response)) return;
   await serveStatic(requestUrl, response);
 }).listen(port, "0.0.0.0", () => {
