@@ -152,7 +152,7 @@ const initialEditor: EditorState = {
 };
 
 const workerScript = new URL("gif.js/dist/gif.worker.js", import.meta.url).href;
-const gifDecodeWorkerUrl = new URL("./gifDecodeWorker.ts", import.meta.url);
+const gifDecodeWorkerUrl = new URL("./gifDecodeWorker.js", import.meta.url);
 const supportedImageAccept = "image/gif,image/png,image/apng,image/webp,image/avif,image/jpeg,image/jpg";
 const autosaveKey = "frameforge-editor-state";
 const presetStorageKey = "frameforge-effect-presets";

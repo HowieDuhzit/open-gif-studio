@@ -111,7 +111,7 @@ function setSecurityHeaders(response: ServerResponse) {
   response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   response.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://api.magnific.com; worker-src 'self' blob: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://api.magnific.com https://upload.giphy.com; worker-src 'self' blob: data:; object-src 'none'; base-uri 'none'",
   );
 }
 
