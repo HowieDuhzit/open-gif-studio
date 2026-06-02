@@ -1,6 +1,7 @@
 import { ChangeEvent, DragEvent, MouseEvent, PointerEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import GIF from "gif.js";
 import JSZip from "jszip";
+import gifDecodeWorkerUrl from "./gifDecodeWorker.js?worker&url";
 
 type SourceFrame = {
   index: number;
@@ -152,7 +153,6 @@ const initialEditor: EditorState = {
 };
 
 const workerScript = new URL("gif.js/dist/gif.worker.js", import.meta.url).href;
-const gifDecodeWorkerUrl = new URL("./gifDecodeWorker.js", import.meta.url);
 const supportedImageAccept = "image/gif,image/png,image/apng,image/webp,image/avif,image/jpeg,image/jpg";
 const autosaveKey = "frameforge-editor-state";
 const presetStorageKey = "frameforge-effect-presets";
@@ -1874,6 +1874,12 @@ function App() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (isSupportedImageFile(file)) {
+      await appendMediaFiles([file]);
+      event.target.value = "";
+      return;
+    }
+
     if (file.size > maxProjectFileBytes) {
       setStatus("Project file is too large to load.");
       event.target.value = "";
@@ -2274,7 +2280,7 @@ function App() {
           <div className="command-group">
             <label className="button quiet">
               Load
-              <input ref={projectInputRef} type="file" accept="application/json,.json,.ogsp.json" onChange={handleProjectImport} />
+              <input ref={projectInputRef} type="file" accept={`${supportedImageAccept},application/json,.json,.ogsp.json`} onChange={handleProjectImport} />
             </label>
             <button className="button quiet icon-only-button" type="button" aria-label="Save project" title="Save" disabled={!project} onClick={saveProjectFile}><Icon name="save" /></button>
             <button className="button quiet icon-only-button" type="button" aria-label="Undo" title="Undo" disabled={history.past.length === 0} onClick={undo}><Icon name="undo" /></button>

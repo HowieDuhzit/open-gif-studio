@@ -15,7 +15,7 @@
 
 - This is a single-package Vite + React + TypeScript app; `src/main.tsx` mounts `src/App.tsx`.
 - Most editor state, rendering, import, export, localStorage, Magnific, GIPHY, and bulk export UI logic lives in `src/App.tsx`; avoid assuming separate feature modules exist.
-- GIF decoding uses `src/gifDecodeWorker.js` as a module worker plus `gifuct-js`; GIF export uses `gif.js` and `gif.js/dist/gif.worker.js` via `new URL(..., import.meta.url)`.
+- GIF decoding imports `src/gifDecodeWorker.js?worker&url` so Vite emits a production worker asset; GIF export uses `gif.js` and `gif.js/dist/gif.worker.js` via `new URL(..., import.meta.url)`.
 - Do not rename the decode worker back to `.ts` without retesting browser worker loading; the latest history fixed a CSP/worker issue by using `src/gifDecodeWorker.js`.
 - Browser storage keys are legacy-named: `frameforge-editor-state`, `frameforge-effect-presets`, and `ogs-theme-mode`.
 - Projects save/load as `.ogsp.json` files that include source image data URLs and editor state.
