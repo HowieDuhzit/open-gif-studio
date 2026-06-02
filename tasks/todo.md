@@ -272,3 +272,19 @@ Known gaps:
 
 - Background removal is color-key based, not AI person/object segmentation.
 - Server render path is intentionally deferred per scope decision: browser gaps first, backend queue/native render sprint next.
+
+## Debug Pass Plan
+
+- [x] Check repo scripts and syntax validation: `npm run build`, `node --check server.mjs`, `node --check src/gifDecodeWorker.js`, `npm audit`.
+- [x] Inspect high-risk runtime paths: worker loading, CSP-sensitive project loading, API proxy routes, and export flow.
+- [x] Fix concrete runtime errors found during the pass.
+- [x] Re-run verification commands and record results.
+
+Debug pass results:
+
+- Fixed `src/gifDecodeWorker.js` so the renamed JavaScript worker no longer contains TypeScript-only syntax.
+- Replaced CSP-sensitive `fetch(data:)` project asset loading with local data URL decoding.
+- Added the missing Vite dev/preview proxy for `/api/giphy/upload` to match the production server route.
+- Sanitized saved project effects/editors so malformed `.ogsp.json` files fall back to valid defaults instead of crashing render/UI paths.
+- Clarified export cancellation copy: active `gif.js` renders finish before their output can be discarded.
+- Verified `npm run build`, `node --check server.mjs`, `node --check src/gifDecodeWorker.js`, `npm audit`, `docker compose config`, and production `/healthz` on `PORT=4177`.

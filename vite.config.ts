@@ -105,6 +105,75 @@ function magnificProxyPlugin(apiKey: string): Plugin {
   };
 }
 
+async function readFormData(request: IncomingMessage) {
+  const method = request.method || "GET";
+  const init: RequestInit & { duplex?: "half" } = method === "GET" || method === "HEAD"
+    ? { method, headers: request.headers as RequestInit["headers"] }
+    : { method, headers: request.headers as RequestInit["headers"], body: request as unknown as RequestInit["body"], duplex: "half" };
+  const webRequest = new Request(`http://${request.headers.host || "localhost"}${request.url || "/"}`, init);
+  return await webRequest.formData();
+}
+
+function giphyProxyPlugin(apiKey: string): Plugin {
+  async function handle(request: IncomingMessage, response: ServerResponse) {
+    if (request.url !== "/api/giphy/upload" || request.method !== "POST") return false;
+
+    if (!apiKey) {
+      sendJson(response, 500, { message: "Missing GIPHY_API_KEY in the server environment." });
+      return true;
+    }
+
+    try {
+      const formData = await readFormData(request);
+      const file = formData.get("file");
+      if (!file || typeof file === "string" || !("size" in file)) {
+        sendJson(response, 400, { message: "A GIF file is required for GIPHY upload." });
+        return true;
+      }
+
+      if (file.size > 100 * 1024 * 1024) {
+        sendJson(response, 400, { message: "GIF exceeds GIPHY's 100MB upload limit." });
+        return true;
+      }
+
+      const uploadFile = file as Blob & { name?: string };
+      const upstreamForm = new FormData();
+      upstreamForm.set("api_key", apiKey);
+      upstreamForm.set("file", uploadFile, uploadFile.name || "open-gif-studio.gif");
+      const tags = formData.get("tags");
+      if (typeof tags === "string" && tags.trim()) upstreamForm.set("tags", tags.trim());
+
+      const upstream = await fetch("https://upload.giphy.com/v1/gifs", { method: "POST", body: upstreamForm });
+      const text = await upstream.text();
+      response.statusCode = upstream.status;
+      response.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json");
+      response.end(text);
+      return true;
+    } catch (error) {
+      sendJson(response, 500, { message: error instanceof Error ? error.message : "GIPHY upload failed." });
+      return true;
+    }
+  }
+
+  return {
+    name: "giphy-proxy",
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        void handle(request, response).then((handled) => {
+          if (!handled) next();
+        });
+      });
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use((request, response, next) => {
+        void handle(request, response).then((handled) => {
+          if (!handled) next();
+        });
+      });
+    },
+  };
+}
+
 function setSecurityHeaders(response: ServerResponse) {
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("Referrer-Policy", "no-referrer");
@@ -122,6 +191,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       magnificProxyPlugin(env.MAGNIFIC_API_KEY?.trim() ?? ""),
+      giphyProxyPlugin(env.GIPHY_API_KEY?.trim() ?? ""),
       {
         name: "security-headers",
         configureServer(server) {

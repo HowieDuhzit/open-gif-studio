@@ -2,21 +2,9 @@
 
 import { decompressFrames, parseGIF } from "gifuct-js";
 
-const workerScope = self as DedicatedWorkerGlobalScope;
+const workerScope = self;
 
-type DecodeRequest = {
-  id: string;
-  name: string;
-  buffer: ArrayBuffer;
-};
-
-type DecodedFrame = {
-  index: number;
-  delay: number;
-  data: ArrayBuffer;
-};
-
-function compositePatch(target: Uint8ClampedArray, width: number, frame: { dims: { left: number; top: number; width: number; height: number }; patch: Uint8ClampedArray }) {
+function compositePatch(target, width, frame) {
   for (let y = 0; y < frame.dims.height; y += 1) {
     for (let x = 0; x < frame.dims.width; x += 1) {
       const sourceIndex = (y * frame.dims.width + x) * 4;
@@ -31,21 +19,16 @@ function compositePatch(target: Uint8ClampedArray, width: number, frame: { dims:
   }
 }
 
-workerScope.onmessage = ({ data }: MessageEvent<DecodeRequest>) => {
+workerScope.onmessage = ({ data }) => {
   try {
     const parsed = parseGIF(data.buffer);
-    const decoded = decompressFrames(parsed, true) as Array<{
-      dims: { left: number; top: number; width: number; height: number };
-      patch: Uint8ClampedArray;
-      delay: number;
-      disposalType: number;
-    }>;
-    const gifMeta = parsed as unknown as { lsd: { width: number; height: number } };
+    const decoded = decompressFrames(parsed, true);
+    const gifMeta = parsed;
     const width = gifMeta.lsd.width;
     const height = gifMeta.lsd.height;
     let current = new Uint8ClampedArray(width * height * 4);
-    const frames: DecodedFrame[] = [];
-    const transfers: Transferable[] = [];
+    const frames = [];
+    const transfers = [];
 
     decoded.forEach((frame, index) => {
       const before = current.slice();

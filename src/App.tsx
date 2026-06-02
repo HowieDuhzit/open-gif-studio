@@ -271,6 +271,65 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const effectKinds: EffectKind[] = ["timing", "transform", "canvas-style", "preset", "adjust", "tint", "color-replace", "blur", "vignette", "noise", "background-removal", "posterize", "solarize", "emboss", "oil-paint", "distortion"];
+const presetKinds: Preset[] = ["grayscale", "sepia", "monochrome", "invert", "gotham", "lomo", "toaster", "polaroid", "nashville"];
+const distortionKinds: DistortionEffect["mode"][] = ["wave", "swirl", "implode"];
+
+function readNumber(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function readBoolean(value: unknown, fallback: boolean) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function readColor(value: unknown, fallback: string) {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+}
+
+function sanitizeEffect(value: unknown): Effect | null {
+  if (!isRecord(value) || typeof value.kind !== "string" || !effectKinds.includes(value.kind as EffectKind)) return null;
+
+  const base = createEffect(value.kind as EffectKind);
+  const effect = { ...base, id: typeof value.id === "string" && value.id ? value.id : base.id, enabled: readBoolean(value.enabled, base.enabled) };
+
+  if (effect.kind === "timing") return { ...effect, trimStart: readNumber(value.trimStart, effect.trimStart), trimEnd: readNumber(value.trimEnd, effect.trimEnd), reverse: readBoolean(value.reverse, effect.reverse), speed: readNumber(value.speed, effect.speed), loopCount: readNumber(value.loopCount, effect.loopCount) };
+  if (effect.kind === "transform") return { ...effect, flipH: readBoolean(value.flipH, effect.flipH), flipV: readBoolean(value.flipV, effect.flipV), rotate: readNumber(value.rotate, effect.rotate), scale: readNumber(value.scale, effect.scale), cropLeft: readNumber(value.cropLeft, effect.cropLeft), cropTop: readNumber(value.cropTop, effect.cropTop), cropWidth: readNumber(value.cropWidth, effect.cropWidth), cropHeight: readNumber(value.cropHeight, effect.cropHeight) };
+  if (effect.kind === "canvas-style") return { ...effect, backgroundColor: readColor(value.backgroundColor, effect.backgroundColor), transparentBackground: readBoolean(value.transparentBackground, effect.transparentBackground), cornerRadius: readNumber(value.cornerRadius, effect.cornerRadius), borderWidth: readNumber(value.borderWidth, effect.borderWidth), borderColor: readColor(value.borderColor, effect.borderColor) };
+  if (effect.kind === "preset") return { ...effect, preset: typeof value.preset === "string" && presetKinds.includes(value.preset as Preset) ? value.preset as Preset : effect.preset };
+  if (effect.kind === "adjust") return { ...effect, brightness: readNumber(value.brightness, effect.brightness), contrast: readNumber(value.contrast, effect.contrast), saturation: readNumber(value.saturation, effect.saturation), lightness: readNumber(value.lightness, effect.lightness), hue: readNumber(value.hue, effect.hue) };
+  if (effect.kind === "tint") return { ...effect, color: readColor(value.color, effect.color), amount: readNumber(value.amount, effect.amount) };
+  if (effect.kind === "color-replace") return { ...effect, from: readColor(value.from, effect.from), to: readColor(value.to, effect.to), tolerance: readNumber(value.tolerance, effect.tolerance), softness: readNumber(value.softness, effect.softness) };
+  if (effect.kind === "blur") return { ...effect, radius: readNumber(value.radius, effect.radius) };
+  if (effect.kind === "vignette") return { ...effect, amount: readNumber(value.amount, effect.amount) };
+  if (effect.kind === "noise") return { ...effect, amount: readNumber(value.amount, effect.amount) };
+  if (effect.kind === "background-removal") return { ...effect, color: readColor(value.color, effect.color), tolerance: readNumber(value.tolerance, effect.tolerance), softness: readNumber(value.softness, effect.softness) };
+  if (effect.kind === "posterize") return { ...effect, levels: readNumber(value.levels, effect.levels) };
+  if (effect.kind === "solarize") return { ...effect, threshold: readNumber(value.threshold, effect.threshold) };
+  if (effect.kind === "emboss") return { ...effect, strength: readNumber(value.strength, effect.strength) };
+  if (effect.kind === "oil-paint") return { ...effect, radius: readNumber(value.radius, effect.radius) };
+  return { ...effect, mode: typeof value.mode === "string" && distortionKinds.includes(value.mode as DistortionEffect["mode"]) ? value.mode as DistortionEffect["mode"] : effect.mode, amount: readNumber(value.amount, effect.amount), radius: readNumber(value.radius, effect.radius), frequency: readNumber(value.frequency, effect.frequency) };
+}
+
+function sanitizeEffects(value: unknown) {
+  return Array.isArray(value) ? value.map(sanitizeEffect).filter((effect): effect is Effect => Boolean(effect)) : [];
+}
+
+function sanitizeEditor(value: unknown): EditorState {
+  if (!isRecord(value)) return createDefaultEditor();
+
+  const frameEffects: Record<string, Effect[]> = {};
+  if (isRecord(value.frameEffects)) {
+    for (const [frame, effects] of Object.entries(value.frameEffects)) frameEffects[frame] = sanitizeEffects(effects);
+  }
+
+  return {
+    effects: sanitizeEffects(value.effects),
+    frameEffects,
+    frameOrder: Array.isArray(value.frameOrder) ? value.frameOrder.filter((frame): frame is number => typeof frame === "number" && Number.isFinite(frame)) : undefined,
+  };
+}
+
 function validateSavedProject(value: unknown): SavedProject {
   if (!isRecord(value)) throw new Error("Invalid project file.");
 
@@ -294,8 +353,8 @@ function validateSavedProject(value: unknown): SavedProject {
         ignoreProjectEffects: Boolean(asset.ignoreProjectEffects),
       };
     }),
-    projectEffects: Array.isArray(value.projectEffects) ? (value.projectEffects as Effect[]) : [],
-    editors: isRecord(value.editors) ? (value.editors as Record<string, EditorState>) : {},
+    projectEffects: sanitizeEffects(value.projectEffects),
+    editors: isRecord(value.editors) ? Object.fromEntries(Object.entries(value.editors).map(([id, editor]) => [id, sanitizeEditor(editor)])) : {},
   };
 }
 
@@ -1011,8 +1070,18 @@ async function fileToDataUrl(file: File) {
 }
 
 async function dataUrlToArrayBuffer(dataUrl: string) {
-  const response = await fetch(dataUrl);
-  return await response.arrayBuffer();
+  const match = dataUrl.match(/^data:([^,]*),(.*)$/s);
+  if (!match) throw new Error("Project asset data URL is invalid.");
+
+  const [, metadata, payload] = match;
+  if (metadata.includes(";base64")) {
+    const binary = window.atob(payload);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes.buffer;
+  }
+
+  return new TextEncoder().encode(decodeURIComponent(payload)).buffer;
 }
 
 function decodeGifFramesInWorker(name: string, buffer: ArrayBuffer, onProgress?: (progress: number) => void) {
@@ -2089,7 +2158,7 @@ function App() {
 
   function cancelExport() {
     exportCancelRequestedRef.current = true;
-    setStatus("Cancel requested. Waiting for the current render step to stop...");
+    setStatus("Cancel requested. The active gif.js render will finish, then its output will be discarded.");
   }
 
   const canEdit = activeAsset !== null;
@@ -2722,7 +2791,7 @@ function App() {
               </button>
               {exportProgress !== null && (
                 <button className="button danger" type="button" onClick={cancelExport}>
-                  Cancel after current step
+                  Discard when render finishes
                 </button>
               )}
               {downloadUrl && (
