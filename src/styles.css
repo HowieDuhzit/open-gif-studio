@@ -138,6 +138,14 @@ h1 {
   line-height: 1;
 }
 
+.brand-logo {
+  display: block;
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.42));
+}
+
 h2 {
   color: var(--text);
   font-size: 0.72rem;
@@ -196,7 +204,7 @@ h2 {
 
 .brand-block {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   min-width: 178px;
 }

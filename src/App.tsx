@@ -2354,7 +2354,7 @@ function App() {
       {isDragging && <div className="drop-overlay">Drop GIF to load</div>}
       <header className="topbar">
         <div className="brand-block">
-          <h1>OGS</h1>
+          <img className="brand-logo" src="/logo.svg" alt="Open GIF Studio" />
           <span>Open GIF Studio</span>
         </div>
         <div className="toolbar">

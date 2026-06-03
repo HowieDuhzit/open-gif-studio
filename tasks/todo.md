@@ -315,3 +315,9 @@ Overlay effects results:
 - [x] Add Open Graph and X/Twitter large-card metadata for shared links.
 - [x] Add `public/og-card.svg`, generated `public/og-card.png` at 1200x630, and `public/robots.txt`.
 - [x] Verify `npm run build`, server syntax, worker syntax, generated `dist/index.html`, and social card image dimensions.
+
+## Logo Update Plan
+
+- [x] Add OGS logo asset based on the provided mark.
+- [x] Use the logo in the app header brand area.
+- [x] Use the logo as the SVG favicon.
