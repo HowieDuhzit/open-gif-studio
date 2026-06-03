@@ -308,3 +308,10 @@ Overlay effects results:
 - [x] Reorder mobile flow around preview first, then media, effects, timeline, and status.
 - [x] Make mobile controls touch-friendly: sticky command bar, full-width toolbar groups, larger transport buttons, and horizontal media/timeline strips.
 - [x] Verify with `npm run build` and a mobile viewport smoke check.
+
+## SEO And Social Cards Plan
+
+- [x] Add title, description, keywords, author, robots, canonical, theme color, and app-name metadata.
+- [x] Add Open Graph and X/Twitter large-card metadata for shared links.
+- [x] Add `public/og-card.svg`, generated `public/og-card.png` at 1200x630, and `public/robots.txt`.
+- [x] Verify `npm run build`, server syntax, worker syntax, generated `dist/index.html`, and social card image dimensions.
