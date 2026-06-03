@@ -301,3 +301,10 @@ Overlay effects results:
 - Added text overlay controls for text, position, size, opacity, rotation, fill/stroke colors, alignment, and weight.
 - Added image overlay controls for file selection, position, scale, opacity, and rotation; overlay images are stored as data URLs in effect state.
 - Verified built production app can import a GIF, add a text overlay, and edit overlay text via Playwright smoke test.
+
+## Mobile Layout Overhaul Plan
+
+- [x] Keep desktop styling unchanged by limiting layout changes to existing mobile media queries.
+- [x] Reorder mobile flow around preview first, then media, effects, timeline, and status.
+- [x] Make mobile controls touch-friendly: sticky command bar, full-width toolbar groups, larger transport buttons, and horizontal media/timeline strips.
+- [x] Verify with `npm run build` and a mobile viewport smoke check.

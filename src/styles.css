@@ -1436,32 +1436,270 @@ input[type="range"] {
     min-height: 100dvh;
     height: auto;
     overflow: visible;
-    grid-template-rows: auto auto auto;
+    grid-template-rows: auto auto auto auto;
+    gap: 10px;
+    padding: 8px;
+  }
+
+  .app-shell:has(.timeline.collapsed) {
+    grid-template-rows: auto auto auto auto;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    gap: 10px;
+    border-color: var(--line-strong);
+    border-radius: 14px;
+    padding: 10px;
+    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.28);
+  }
+
+  .brand-block {
+    width: 100%;
+    min-width: 0;
+    justify-content: space-between;
+  }
+
+  .brand-block span {
+    font-size: 0.58rem;
+  }
+
+  .toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .command-group,
+  .toolbar > .command-group:first-child {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+    border-left: 0;
+    padding-left: 0;
+    gap: 6px;
+  }
+
+  .utility-links {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .topbar .button,
+  .topbar .mini-button,
+  .topbar .theme-switch,
+  .topbar .icon-link {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    justify-content: center;
+  }
+
+  .topbar .theme-switch {
+    padding: 3px;
+  }
+
+  .topbar .icon-link {
+    display: none;
   }
 
   .workspace {
+    display: flex;
+    flex-direction: column;
     grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .monitor-stage {
+    order: 1;
+  }
+
+  .media-bin {
+    order: 2;
+  }
+
+  .inspector {
+    order: 3;
   }
 
   .panel,
   .monitor-stage,
   .timeline {
     min-height: auto;
+    border-radius: 14px;
+  }
+
+  .panel,
+  .timeline {
+    padding: 10px;
+  }
+
+  .panel.collapsed {
+    width: auto;
+  }
+
+  .panel.collapsed .panel-head {
+    flex-direction: row;
+    min-height: 0;
+    border-bottom: 0;
+  }
+
+  .panel.collapsed .panel-head h2 {
+    writing-mode: initial;
+    order: initial;
+  }
+
+  .panel.collapsed .panel-head-actions {
+    flex-direction: row;
+    order: initial;
+  }
+
+  .panel-head,
+  .monitor-head,
+  .timeline-head {
+    min-height: 44px;
+    padding: 10px;
   }
 
   .monitor-stage {
-    min-height: 440px;
+    min-height: min(68dvh, 560px);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-3) 26%, transparent), var(--panel));
+  }
+
+  .monitor {
+    min-height: 42dvh;
+    max-height: 62dvh;
+  }
+
+  .transport {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .transport .button {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+  }
+
+  .media-bin .panel-head,
+  .inspector .panel-head,
+  .timeline-head {
+    position: sticky;
+    top: 114px;
+    z-index: 10;
+    background: var(--panel);
+  }
+
+  .asset-list {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scroll-snap-type: x mandatory;
+  }
+
+  .asset-group {
+    min-width: min(86vw, 360px);
+    scroll-snap-align: start;
+  }
+
+  .asset-card {
+    grid-template-columns: 64px minmax(0, 1fr);
+    border-radius: 12px;
+  }
+
+  .asset-thumb,
+  .asset-thumb-button {
+    width: 64px;
+    height: 64px;
+  }
+
+  .stack-panel {
+    gap: 12px;
+  }
+
+  .effect-tools {
+    position: sticky;
+    top: 158px;
+    z-index: 8;
+    border-radius: 12px;
+  }
+
+  .scope-toggle {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .scope-toggle .toggle,
+  .effect-tools select,
+  .effect-tools input,
+  .preset-row .mini-button {
+    min-height: 42px;
+  }
+
+  .effect-card {
+    border-radius: 14px;
+    padding: 14px;
+  }
+
+  .effect-card-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .effect-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .effect-actions .mini-button {
+    width: 100%;
+    min-height: 38px;
+  }
+
+  .timeline {
+    order: 3;
+    min-height: 150px;
+  }
+
+  .frame-strip {
+    padding-bottom: 4px;
+    scroll-snap-type: x mandatory;
+  }
+
+  .frame-chip {
+    flex: 0 0 76px;
+    height: 64px;
+    scroll-snap-align: start;
   }
 
   .inspector,
   .media-bin {
     max-height: none;
   }
+
+  .project-status-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 25;
+    grid-template-columns: 1fr;
+    gap: 4px;
+    border-radius: 14px;
+    box-shadow: 0 -14px 28px rgba(0, 0, 0, 0.24);
+  }
 }
 
 @media (max-width: 620px) {
   .app-shell {
     padding: 6px;
+    gap: 8px;
   }
 
   .brand-block,
@@ -1475,6 +1713,23 @@ input[type="range"] {
   .command-group {
     border-left: 0;
     padding-left: 0;
+  }
+
+  .brand-block {
+    align-items: center;
+  }
+
+  .brand-block span {
+    max-width: 18ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .command-group,
+  .toolbar > .command-group:first-child,
+  .utility-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .project-status-bar {
@@ -1492,17 +1747,50 @@ input[type="range"] {
   }
 
   .workspace {
-    gap: 6px;
+    gap: 8px;
+  }
+
+  .monitor-head {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .viewer-controls {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .viewer-controls .mini-button,
+  .viewer-controls span {
+    justify-content: center;
+    min-height: 36px;
+  }
+
+  .monitor-stage {
+    min-height: min(72dvh, 520px);
+  }
+
+  .monitor {
+    min-height: 46dvh;
+  }
+
+  .transport {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .asset-card {
-    grid-template-columns: 48px minmax(0, 1fr);
+    grid-template-columns: 56px minmax(0, 1fr);
   }
 
   .asset-thumb,
   .asset-thumb-button {
-    width: 48px;
-    height: 48px;
+    width: 56px;
+    height: 56px;
+  }
+
+  .asset-card-actions {
+    flex-wrap: wrap;
   }
 
   .preset-row,
@@ -1520,8 +1808,18 @@ input[type="range"] {
   }
 
   .frame-chip {
-    flex-basis: 62px;
-    height: 54px;
+    flex-basis: 70px;
+    height: 60px;
+  }
+
+  .modal {
+    max-height: 94dvh;
+    border-radius: 16px 16px 0 0;
+  }
+
+  .modal-grid,
+  .export-summary {
+    grid-template-columns: 1fr;
   }
 }
 
