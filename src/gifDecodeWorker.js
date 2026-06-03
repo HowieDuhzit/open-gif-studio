@@ -4,13 +4,17 @@ import { decompressFrames, parseGIF } from "gifuct-js";
 
 const workerScope = self;
 
-function compositePatch(target, width, frame) {
+function compositePatch(target, width, height, frame) {
   for (let y = 0; y < frame.dims.height; y += 1) {
     for (let x = 0; x < frame.dims.width; x += 1) {
       const sourceIndex = (y * frame.dims.width + x) * 4;
       const targetX = frame.dims.left + x;
       const targetY = frame.dims.top + y;
+      if (targetX < 0 || targetY < 0 || targetX >= width || targetY >= height) continue;
       const targetIndex = (targetY * width + targetX) * 4;
+      if (targetIndex < 0 || targetIndex + 3 >= target.length) continue;
+      // Transparent GIF patch pixels mean "leave the previous canvas pixel as-is".
+      if (frame.patch[sourceIndex + 3] === 0) continue;
       target[targetIndex] = frame.patch[sourceIndex];
       target[targetIndex + 1] = frame.patch[sourceIndex + 1];
       target[targetIndex + 2] = frame.patch[sourceIndex + 2];
@@ -32,7 +36,7 @@ workerScope.onmessage = ({ data }) => {
 
     decoded.forEach((frame, index) => {
       const before = current.slice();
-      compositePatch(current, width, frame);
+      compositePatch(current, width, height, frame);
       const snapshot = current.slice();
       frames.push({
         index,
@@ -46,7 +50,9 @@ workerScope.onmessage = ({ data }) => {
           for (let x = 0; x < frame.dims.width; x += 1) {
             const targetX = frame.dims.left + x;
             const targetY = frame.dims.top + y;
+            if (targetX < 0 || targetY < 0 || targetX >= width || targetY >= height) continue;
             const targetIndex = (targetY * width + targetX) * 4;
+            if (targetIndex < 0 || targetIndex + 3 >= current.length) continue;
             current[targetIndex] = 0;
             current[targetIndex + 1] = 0;
             current[targetIndex + 2] = 0;

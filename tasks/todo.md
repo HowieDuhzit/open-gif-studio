@@ -340,3 +340,9 @@ PNG logo correction:
 - [x] Add server-side GIPHY search and GIF download proxy routes so the API key remains server-side.
 - [x] Reuse the existing media import/decode path for selected GIPHY GIFs.
 - [x] Mirror the GIPHY proxy routes in Vite dev/preview.
+
+GIF decode correctness follow-up:
+
+- [x] Fix GIF frame compositing so transparent pixels inside partial frame patches preserve the previous composed canvas instead of punching transparent holes.
+- [x] Add bounds checks around patch compositing and disposal clearing to avoid malformed frame rectangles writing outside the canvas.
+- [x] Verify with a focused compositor regression script, `npm run build`, `node --check src/gifDecodeWorker.js`, and `node --check server.mjs`.
