@@ -327,3 +327,8 @@ Logo visibility follow-up:
 - [x] Replaced the rough text-based SVG with a more detailed path-based vector logo.
 - [x] Added cache-busting query strings to the favicon and header logo references so the changed `/logo.svg` is not hidden by browser/CDN cache.
 - [x] Increased the header logo from 42px to 52px so the new vector detail is more visible in the app chrome.
+
+PNG logo correction:
+
+- [x] Use the provided `/home/howie/Downloads/OGSLOGO.png` bitmap directly as `public/logo.png`.
+- [x] Point the header brand and favicon to `/logo.png?v=20260603-original` instead of converting the logo to SVG.

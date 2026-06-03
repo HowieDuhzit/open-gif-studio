@@ -148,7 +148,7 @@ type MagnificIconsResponse = {
 
 const repoUrl = "https://github.com/HowieDuhzit/open-gif-studio";
 const donationUrl = "https://buymeacoffee.com/howieduhzit";
-const logoSrc = "/logo.svg?v=20260603-detailed";
+const logoSrc = "/logo.png?v=20260603-original";
 
 const initialEditor: EditorState = {
   effects: [],
