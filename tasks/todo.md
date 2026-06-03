@@ -288,3 +288,16 @@ Debug pass results:
 - Sanitized saved project effects/editors so malformed `.ogsp.json` files fall back to valid defaults instead of crashing render/UI paths.
 - Clarified export cancellation copy: active `gif.js` renders finish before their output can be discarded.
 - Verified `npm run build`, `node --check server.mjs`, `node --check src/gifDecodeWorker.js`, `npm audit`, `docker compose config`, and production `/healthz` on `PORT=4177`.
+
+## Overlay Effects Plan
+
+- [x] Add text overlay as a first-class effect that renders in preview, thumbnails, single export, and bulk export.
+- [x] Add image overlay as a first-class effect using data URLs so saved `.ogsp.json` projects keep overlay images.
+- [x] Keep controls compact in the existing effects panel: position, scale/size, rotation/opacity, and basic styling.
+- [x] Verify with `npm run build` and a browser import/render smoke test.
+
+Overlay effects results:
+
+- Added text overlay controls for text, position, size, opacity, rotation, fill/stroke colors, alignment, and weight.
+- Added image overlay controls for file selection, position, scale, opacity, and rotation; overlay images are stored as data URLs in effect state.
+- Verified built production app can import a GIF, add a text overlay, and edit overlay text via Playwright smoke test.

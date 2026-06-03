@@ -12,7 +12,7 @@ type SourceFrame = {
 
 type Preset = "grayscale" | "sepia" | "monochrome" | "invert" | "gotham" | "lomo" | "toaster" | "polaroid" | "nashville";
 
-type EffectKind = "timing" | "transform" | "canvas-style" | "preset" | "adjust" | "tint" | "color-replace" | "blur" | "vignette" | "noise" | "background-removal" | "posterize" | "solarize" | "emboss" | "oil-paint" | "distortion";
+type EffectKind = "timing" | "transform" | "canvas-style" | "preset" | "adjust" | "tint" | "color-replace" | "blur" | "vignette" | "noise" | "background-removal" | "posterize" | "solarize" | "emboss" | "oil-paint" | "distortion" | "text-overlay" | "image-overlay";
 
 type BaseEffect = {
   id: string;
@@ -46,9 +46,11 @@ type SolarizeEffect = BaseEffect & { kind: "solarize"; threshold: number };
 type EmbossEffect = BaseEffect & { kind: "emboss"; strength: number };
 type OilPaintEffect = BaseEffect & { kind: "oil-paint"; radius: number };
 type DistortionEffect = BaseEffect & { kind: "distortion"; mode: "wave" | "swirl" | "implode"; amount: number; radius: number; frequency: number };
+type TextOverlayEffect = BaseEffect & { kind: "text-overlay"; text: string; x: number; y: number; size: number; color: string; strokeColor: string; strokeWidth: number; opacity: number; rotate: number; align: "left" | "center" | "right"; font: string; weight: "400" | "700" | "900" };
+type ImageOverlayEffect = BaseEffect & { kind: "image-overlay"; imageDataUrl: string; imageName: string; x: number; y: number; scale: number; opacity: number; rotate: number };
 
-type Effect = TimingEffect | TransformEffect | CanvasStyleEffect | PresetEffect | AdjustEffect | TintEffect | ColorReplaceEffect | BlurEffect | VignetteEffect | NoiseEffect | BackgroundRemovalEffect | PosterizeEffect | SolarizeEffect | EmbossEffect | OilPaintEffect | DistortionEffect;
-type ColorPickTarget = { effectId: string; field: "color" | "from" | "to" | "backgroundColor" | "borderColor" };
+type Effect = TimingEffect | TransformEffect | CanvasStyleEffect | PresetEffect | AdjustEffect | TintEffect | ColorReplaceEffect | BlurEffect | VignetteEffect | NoiseEffect | BackgroundRemovalEffect | PosterizeEffect | SolarizeEffect | EmbossEffect | OilPaintEffect | DistortionEffect | TextOverlayEffect | ImageOverlayEffect;
+type ColorPickTarget = { effectId: string; field: "color" | "from" | "to" | "backgroundColor" | "borderColor" | "strokeColor" };
 type PanPoint = { x: number; y: number };
 type EffectScope = "project" | "global" | "frame";
 
@@ -177,6 +179,8 @@ const defaultExportSettings: ExportSettings = {
   dither: false,
   optimizeTransparency: true,
 };
+const overlayImageLoadedEvent = "ogs-overlay-image-loaded";
+const overlayImageCache = new Map<string, HTMLImageElement>();
 
 function clamp(value: number) {
   return Math.max(0, Math.min(255, value));
@@ -271,9 +275,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const effectKinds: EffectKind[] = ["timing", "transform", "canvas-style", "preset", "adjust", "tint", "color-replace", "blur", "vignette", "noise", "background-removal", "posterize", "solarize", "emboss", "oil-paint", "distortion"];
+const effectKinds: EffectKind[] = ["timing", "transform", "canvas-style", "preset", "adjust", "tint", "color-replace", "blur", "vignette", "noise", "background-removal", "posterize", "solarize", "emboss", "oil-paint", "distortion", "text-overlay", "image-overlay"];
 const presetKinds: Preset[] = ["grayscale", "sepia", "monochrome", "invert", "gotham", "lomo", "toaster", "polaroid", "nashville"];
 const distortionKinds: DistortionEffect["mode"][] = ["wave", "swirl", "implode"];
+const textAlignKinds: TextOverlayEffect["align"][] = ["left", "center", "right"];
+const textWeightKinds: TextOverlayEffect["weight"][] = ["400", "700", "900"];
 
 function readNumber(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -285,6 +291,10 @@ function readBoolean(value: unknown, fallback: boolean) {
 
 function readColor(value: unknown, fallback: string) {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+}
+
+function readString(value: unknown, fallback: string) {
+  return typeof value === "string" ? value : fallback;
 }
 
 function sanitizeEffect(value: unknown): Effect | null {
@@ -308,7 +318,9 @@ function sanitizeEffect(value: unknown): Effect | null {
   if (effect.kind === "solarize") return { ...effect, threshold: readNumber(value.threshold, effect.threshold) };
   if (effect.kind === "emboss") return { ...effect, strength: readNumber(value.strength, effect.strength) };
   if (effect.kind === "oil-paint") return { ...effect, radius: readNumber(value.radius, effect.radius) };
-  return { ...effect, mode: typeof value.mode === "string" && distortionKinds.includes(value.mode as DistortionEffect["mode"]) ? value.mode as DistortionEffect["mode"] : effect.mode, amount: readNumber(value.amount, effect.amount), radius: readNumber(value.radius, effect.radius), frequency: readNumber(value.frequency, effect.frequency) };
+  if (effect.kind === "distortion") return { ...effect, mode: typeof value.mode === "string" && distortionKinds.includes(value.mode as DistortionEffect["mode"]) ? value.mode as DistortionEffect["mode"] : effect.mode, amount: readNumber(value.amount, effect.amount), radius: readNumber(value.radius, effect.radius), frequency: readNumber(value.frequency, effect.frequency) };
+  if (effect.kind === "text-overlay") return { ...effect, text: readString(value.text, effect.text), x: readNumber(value.x, effect.x), y: readNumber(value.y, effect.y), size: readNumber(value.size, effect.size), color: readColor(value.color, effect.color), strokeColor: readColor(value.strokeColor, effect.strokeColor), strokeWidth: readNumber(value.strokeWidth, effect.strokeWidth), opacity: readNumber(value.opacity, effect.opacity), rotate: readNumber(value.rotate, effect.rotate), align: typeof value.align === "string" && textAlignKinds.includes(value.align as TextOverlayEffect["align"]) ? value.align as TextOverlayEffect["align"] : effect.align, font: readString(value.font, effect.font), weight: typeof value.weight === "string" && textWeightKinds.includes(value.weight as TextOverlayEffect["weight"]) ? value.weight as TextOverlayEffect["weight"] : effect.weight };
+  return { ...effect, imageDataUrl: typeof value.imageDataUrl === "string" && value.imageDataUrl.startsWith("data:image/") ? value.imageDataUrl : effect.imageDataUrl, imageName: readString(value.imageName, effect.imageName), x: readNumber(value.x, effect.x), y: readNumber(value.y, effect.y), scale: readNumber(value.scale, effect.scale), opacity: readNumber(value.opacity, effect.opacity), rotate: readNumber(value.rotate, effect.rotate) };
 }
 
 function sanitizeEffects(value: unknown) {
@@ -496,6 +508,8 @@ function createEffect(kind: EffectKind): Effect {
   if (kind === "emboss") return { id, kind, enabled: true, strength: 70 };
   if (kind === "oil-paint") return { id, kind, enabled: true, radius: 2 };
   if (kind === "distortion") return { id, kind, enabled: true, mode: "wave", amount: 35, radius: 75, frequency: 3 };
+  if (kind === "text-overlay") return { id, kind, enabled: true, text: "OPEN GIF STUDIO", x: 50, y: 82, size: 36, color: "#f5f5dc", strokeColor: "#101318", strokeWidth: 3, opacity: 100, rotate: 0, align: "center", font: "IBM Plex Sans", weight: "900" };
+  if (kind === "image-overlay") return { id, kind, enabled: true, imageDataUrl: "", imageName: "No image selected", x: 50, y: 50, scale: 40, opacity: 100, rotate: 0 };
   return { id, kind, enabled: true, color: "#00ff00", tolerance: 22, softness: 10 };
 }
 
@@ -504,6 +518,8 @@ function effectName(effect: Effect) {
   if (effect.kind === "color-replace") return "Color replacement";
   if (effect.kind === "canvas-style") return "Canvas style";
   if (effect.kind === "oil-paint") return "Oil paint";
+  if (effect.kind === "text-overlay") return "Text overlay";
+  if (effect.kind === "image-overlay") return "Image overlay";
   return effect.kind.replaceAll("-", " ");
 }
 
@@ -758,6 +774,54 @@ function applyDistortionEffect(imageData: ImageData, effect: DistortionEffect) {
   return next;
 }
 
+function getOverlayImage(dataUrl: string) {
+  if (!dataUrl) return null;
+  const cached = overlayImageCache.get(dataUrl);
+  if (cached) return cached;
+
+  const image = new Image();
+  image.onload = () => window.dispatchEvent(new Event(overlayImageLoadedEvent));
+  image.src = dataUrl;
+  overlayImageCache.set(dataUrl, image);
+  return image;
+}
+
+function drawTextOverlay(ctx: CanvasRenderingContext2D, effect: TextOverlayEffect, width: number, height: number) {
+  if (!effect.text.trim()) return;
+
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, effect.opacity / 100));
+  ctx.translate((effect.x / 100) * width, (effect.y / 100) * height);
+  ctx.rotate((effect.rotate * Math.PI) / 180);
+  ctx.font = `${effect.weight} ${Math.max(1, effect.size)}px ${effect.font}, sans-serif`;
+  ctx.textAlign = effect.align;
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  if (effect.strokeWidth > 0) {
+    ctx.strokeStyle = effect.strokeColor;
+    ctx.lineWidth = effect.strokeWidth;
+    ctx.strokeText(effect.text, 0, 0);
+  }
+  ctx.fillStyle = effect.color;
+  ctx.fillText(effect.text, 0, 0);
+  ctx.restore();
+}
+
+function drawImageOverlay(ctx: CanvasRenderingContext2D, effect: ImageOverlayEffect, width: number, height: number) {
+  const image = getOverlayImage(effect.imageDataUrl);
+  if (!image?.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) return;
+
+  const scale = Math.max(1, effect.scale) / 100;
+  const drawWidth = image.naturalWidth * scale;
+  const drawHeight = image.naturalHeight * scale;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, effect.opacity / 100));
+  ctx.translate((effect.x / 100) * width, (effect.y / 100) * height);
+  ctx.rotate((effect.rotate * Math.PI) / 180);
+  ctx.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+  ctx.restore();
+}
+
 function applyEffectStack(imageData: ImageData, effects: Effect[]) {
   const canvas = document.createElement("canvas");
   const scratch = document.createElement("canvas");
@@ -793,6 +857,16 @@ function applyEffectStack(imageData: ImageData, effects: Effect[]) {
       scratchCtx.filter = "none";
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(scratch, 0, 0);
+      return;
+    }
+
+    if (effect.kind === "text-overlay") {
+      drawTextOverlay(ctx, effect, canvas.width, canvas.height);
+      return;
+    }
+
+    if (effect.kind === "image-overlay") {
+      drawImageOverlay(ctx, effect, canvas.width, canvas.height);
       return;
     }
 
@@ -1293,6 +1367,7 @@ function App() {
   const [viewerPan, setViewerPan] = useState<PanPoint>({ x: 0, y: 0 });
   const [fitScale, setFitScale] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
+  const [overlayImageVersion, setOverlayImageVersion] = useState(0);
   const previewRef = useRef<HTMLCanvasElement>(null);
   const exportPreviewRef = useRef<HTMLCanvasElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
@@ -1348,6 +1423,12 @@ function App() {
   }, [themeMode]);
 
   useEffect(() => {
+    const refreshOverlays = () => setOverlayImageVersion((version) => version + 1);
+    window.addEventListener(overlayImageLoadedEvent, refreshOverlays);
+    return () => window.removeEventListener(overlayImageLoadedEvent, refreshOverlays);
+  }, []);
+
+  useEffect(() => {
     if (!activeAsset) {
       setIsPlaying(false);
       return;
@@ -1395,7 +1476,7 @@ function App() {
       setLiveAssetThumbnails((current) => ({ ...current, [activeAsset.id]: canvasThumbnail(previewRef.current!, 52, 52) }));
     });
     return () => window.cancelAnimationFrame(frameId);
-  }, [activeAsset, selectedFrame, editor, projectEffects, isBeforePreview]);
+  }, [activeAsset, selectedFrame, editor, projectEffects, isBeforePreview, overlayImageVersion]);
 
   useEffect(() => {
     if (!isExportModalOpen || !activeAsset || !selectedFrame || !exportPreviewRef.current) return;
@@ -1403,7 +1484,7 @@ function App() {
       if (exportPreviewRef.current) renderFrame(exportPreviewRef.current, selectedFrame, activeAsset, editor, projectScopedEffects(activeAsset, projectEffects));
     });
     return () => window.cancelAnimationFrame(frameId);
-  }, [activeAsset, editor, isExportModalOpen, projectEffects, selectedFrame]);
+  }, [activeAsset, editor, isExportModalOpen, projectEffects, selectedFrame, overlayImageVersion]);
 
   useEffect(() => {
     if (!isAnyModalOpen) return;
@@ -1480,7 +1561,7 @@ function App() {
       window.clearTimeout(timer);
       cancelers.forEach((cancel) => cancel());
     };
-  }, [activeAsset, currentFrame, deferredEditor, deferredPlayableFrames, deferredProjectEffects, exportProgress, isPlaying]);
+  }, [activeAsset, currentFrame, deferredEditor, deferredPlayableFrames, deferredProjectEffects, exportProgress, isPlaying, overlayImageVersion]);
 
   useEffect(() => {
     if (!deferredProject || deferredProject.assets.length === 0) {
@@ -1519,7 +1600,7 @@ function App() {
       window.clearTimeout(timer);
       cancelers.forEach((cancel) => cancel());
     };
-  }, [deferredProject, exportProgress, isPlaying]);
+  }, [deferredProject, exportProgress, isPlaying, overlayImageVersion]);
 
   function updateEditor(next: Partial<EditorState>) {
     if (!project || !activeAsset) return;
@@ -2477,6 +2558,8 @@ function App() {
                 <option value="emboss">Emboss</option>
                 <option value="oil-paint">Oil paint</option>
                 <option value="distortion">Distortion</option>
+                <option value="text-overlay">Text overlay</option>
+                <option value="image-overlay">Image overlay</option>
               </select>
 
               <div className="preset-row">
@@ -2655,6 +2738,42 @@ function App() {
                       <label>Amount {effect.amount}%<input type="range" min="0" max="100" value={effect.amount} onChange={(event) => updateEffect(effect.id, { amount: Number(event.target.value) })} /></label>
                       <label>Radius {effect.radius}%<input type="range" min="10" max="100" value={effect.radius} onChange={(event) => updateEffect(effect.id, { radius: Number(event.target.value) })} /></label>
                       <label>Frequency {effect.frequency}<input type="range" min="1" max="12" value={effect.frequency} onChange={(event) => updateEffect(effect.id, { frequency: Number(event.target.value) })} /></label>
+                    </>
+                  )}
+                  {effect.kind === "text-overlay" && (
+                    <>
+                      <label>Text<input type="text" value={effect.text} onChange={(event) => updateEffect(effect.id, { text: event.target.value })} /></label>
+                      <div className="split-buttons">
+                        <label>X {effect.x}%<input type="range" min="0" max="100" value={effect.x} onChange={(event) => updateEffect(effect.id, { x: Number(event.target.value) })} /></label>
+                        <label>Y {effect.y}%<input type="range" min="0" max="100" value={effect.y} onChange={(event) => updateEffect(effect.id, { y: Number(event.target.value) })} /></label>
+                      </div>
+                      <label>Size {effect.size}px<input type="range" min="8" max="180" value={effect.size} onChange={(event) => updateEffect(effect.id, { size: Number(event.target.value) })} /></label>
+                      <label>Opacity {effect.opacity}%<input type="range" min="0" max="100" value={effect.opacity} onChange={(event) => updateEffect(effect.id, { opacity: Number(event.target.value) })} /></label>
+                      <label>Rotate {effect.rotate}deg<input type="range" min="-180" max="180" value={effect.rotate} onChange={(event) => updateEffect(effect.id, { rotate: Number(event.target.value) })} /></label>
+                      <ColorField label="Text color" value={effect.color} onChange={(color) => updateEffect(effect.id, { color })} onPickPreview={() => startPreviewColorPick({ effectId: effect.id, field: "color" })} />
+                      <ColorField label="Stroke color" value={effect.strokeColor} onChange={(strokeColor) => updateEffect(effect.id, { strokeColor })} onPickPreview={() => startPreviewColorPick({ effectId: effect.id, field: "strokeColor" })} />
+                      <label>Stroke {effect.strokeWidth}px<input type="range" min="0" max="16" value={effect.strokeWidth} onChange={(event) => updateEffect(effect.id, { strokeWidth: Number(event.target.value) })} /></label>
+                      <label>Align<select value={effect.align} onChange={(event) => updateEffect(effect.id, { align: event.target.value as TextOverlayEffect["align"] })}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
+                      <label>Weight<select value={effect.weight} onChange={(event) => updateEffect(effect.id, { weight: event.target.value as TextOverlayEffect["weight"] })}><option value="400">Regular</option><option value="700">Bold</option><option value="900">Heavy</option></select></label>
+                    </>
+                  )}
+                  {effect.kind === "image-overlay" && (
+                    <>
+                      <label>Overlay image<input type="file" accept="image/png,image/jpeg,image/jpg,image/webp,image/avif,image/gif" onChange={async (event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        const imageDataUrl = await fileToDataUrl(file);
+                        updateEffect(effect.id, { imageDataUrl, imageName: file.name });
+                        event.target.value = "";
+                      }} /></label>
+                      <span className="field-note">{effect.imageDataUrl ? effect.imageName : "Choose an image to overlay"}</span>
+                      <div className="split-buttons">
+                        <label>X {effect.x}%<input type="range" min="0" max="100" value={effect.x} onChange={(event) => updateEffect(effect.id, { x: Number(event.target.value) })} /></label>
+                        <label>Y {effect.y}%<input type="range" min="0" max="100" value={effect.y} onChange={(event) => updateEffect(effect.id, { y: Number(event.target.value) })} /></label>
+                      </div>
+                      <label>Scale {effect.scale}%<input type="range" min="5" max="300" value={effect.scale} onChange={(event) => updateEffect(effect.id, { scale: Number(event.target.value) })} /></label>
+                      <label>Opacity {effect.opacity}%<input type="range" min="0" max="100" value={effect.opacity} onChange={(event) => updateEffect(effect.id, { opacity: Number(event.target.value) })} /></label>
+                      <label>Rotate {effect.rotate}deg<input type="range" min="-180" max="180" value={effect.rotate} onChange={(event) => updateEffect(effect.id, { rotate: Number(event.target.value) })} /></label>
                     </>
                   )}
                 </section>
