@@ -445,16 +445,16 @@ function ColorField({
   const [open, setOpen] = useState(false);
 
   return (
-    <label>
+    <label title={`Choose ${label.toLowerCase()} or pick it from the preview canvas.`}>
       {label}
       <span className="color-popover-wrap">
-        <button className="color-trigger" type="button" onClick={() => setOpen((next) => !next)}>
+        <button className="color-trigger" type="button" title={`Open ${label.toLowerCase()} color controls`} onClick={() => setOpen((next) => !next)}>
           <span className="color-swatch" style={{ background: value }} />
           <span>{value}</span>
         </button>
         {open && (
           <span className="color-popover">
-            <input type="color" value={value} onChange={(event) => onChange(event.target.value)} />
+            <input type="color" title={`Set ${label.toLowerCase()}`} value={value} onChange={(event) => onChange(event.target.value)} />
             <button
               className="eyedropper-button"
               type="button"
@@ -2490,6 +2490,7 @@ function App() {
       <button
         className="asset-thumb-button"
         type="button"
+        title={`Select ${asset.name}`}
         onClick={() => {
           if (!project) return;
           setProject({ ...project, activeAssetId: asset.id });
@@ -2505,6 +2506,7 @@ function App() {
               className="drag-handle asset-drag"
               draggable={isDragDropEnabled}
               aria-label={`Drag ${asset.name}`}
+              title="Drag to reorder this media item"
               role="button"
               onDragStart={(event) => {
                 if (!isDragDropEnabled) return;
@@ -2531,12 +2533,14 @@ function App() {
         <input
           className="asset-name-input"
           type="text"
+          title="Rename this media item"
           value={asset.name}
           onChange={(event) => renameAsset(asset.id, event.target.value)}
         />
         <button
           className="asset-open"
           type="button"
+          title="Make this media item active in the preview, timeline, and inspector"
           onClick={() => {
             if (!project) return;
             setProject({ ...project, activeAssetId: asset.id });
@@ -2578,7 +2582,7 @@ function App() {
         <div className="toolbar">
           <div className="command-group">
             <button className="button quiet icon-only-button help-button" type="button" aria-label="Start app walkthrough" title="Walkthrough" onClick={startWalkthrough}>?</button>
-            <label className="button quiet">
+            <label className="button quiet" title="Load a local GIF, image, or saved Open GIF Studio project">
               Load
               <input ref={projectInputRef} type="file" accept={`${supportedImageAccept},application/json,.json,.ogsp.json`} onChange={handleProjectImport} />
             </label>
@@ -2588,10 +2592,10 @@ function App() {
             <button className="button quiet icon-only-button" type="button" aria-label="Reset edits" title="Reset" disabled={!canEdit} onClick={resetEdits}><Icon name="reset" /></button>
           </div>
           <div className="command-group utility-links">
-            <button className="button export" type="button" disabled={!canEdit} onClick={openExportModal}>
+            <button className="button export" type="button" title="Open export settings and render the active GIF" disabled={!canEdit} onClick={openExportModal}>
               Export
             </button>
-            <button className="button export" type="button" disabled={!project || project.assets.length === 0 || isBulkExporting} onClick={bulkExportGif}>
+            <button className="button export" type="button" title="Export every visible media item into a ZIP file" disabled={!project || project.assets.length === 0 || isBulkExporting} onClick={bulkExportGif}>
               {isBulkExporting ? `Exporting ${Math.round((exportProgress ?? 0) * 100)}%` : "Export All"}
             </button>
             <button className="theme-switch" type="button" onClick={() => setThemeMode((value) => (value === "dark" ? "light" : "dark"))} aria-label={`Switch to ${themeMode === "dark" ? "light" : "dark"} mode`} title={`Switch to ${themeMode === "dark" ? "light" : "dark"} mode`}>
@@ -2613,9 +2617,9 @@ function App() {
           <div className="panel-head">
             <h2>Media Bin</h2>
             <div className="panel-head-actions">
-              {!isMediaBinCollapsed && <label className="mini-button icon-only-button media-add-button" aria-label="Add media" title="Add media"><Icon name="plus" /><input type="file" accept={supportedImageAccept} multiple onChange={handleImport} /></label>}
-              {!isMediaBinCollapsed && <button className="mini-button media-giphy-button" type="button" aria-label="Open GIPHY browser" title="GIPHY" onClick={openGiphyModal}>GIPHY</button>}
-              {!isMediaBinCollapsed && <button className="mini-button icon-only-button" type="button" aria-label="Open animated icons" title="Animated Icons" onClick={openIconModal}><Icon name="sparkles" /></button>}
+              {!isMediaBinCollapsed && <label className="mini-button icon-only-button media-add-button" aria-label="Add media" title="Add local GIF, APNG, WebP, AVIF, PNG, or JPEG files"><Icon name="plus" /><input type="file" accept={supportedImageAccept} multiple onChange={handleImport} /></label>}
+              {!isMediaBinCollapsed && <button className="mini-button media-giphy-button" type="button" aria-label="Open GIPHY browser" title="Search GIPHY and import a GIF into the media bin" onClick={openGiphyModal}>GIPHY</button>}
+              {!isMediaBinCollapsed && <button className="mini-button icon-only-button" type="button" aria-label="Open animated icons" title="Search Magnific animated icons and import one as a GIF" onClick={openIconModal}><Icon name="sparkles" /></button>}
               <button className="mini-button panel-collapse-button" type="button" aria-label={isMediaBinCollapsed ? "Open media bin" : "Collapse media bin"} title={isMediaBinCollapsed ? "Open media bin" : "Collapse media bin"} onClick={() => setIsMediaBinCollapsed((value) => !value)}>
                 {isMediaBinCollapsed ? "›" : "‹"}
               </button>
@@ -2648,7 +2652,7 @@ function App() {
                   </div>
                 </>
               ) : (
-                <label className="drop-copy">
+                <label className="drop-copy" title="Click to choose files, or drag media into the app">
                   <strong>No source loaded</strong>
                   <span>Import or drop GIF, APNG, WebP, AVIF, PNG, or JPEG files to build a project.</span>
                   <input type="file" accept={supportedImageAccept} multiple onChange={handleImport} />
@@ -2669,13 +2673,13 @@ function App() {
             </div>
             <div className="viewer-controls">
               {exportProgress !== null && <span>{Math.round(exportProgress * 100)}%</span>}
-              <button className={isBeforePreview ? "mini-button active" : "mini-button"} type="button" disabled={!canEdit} onClick={() => setIsBeforePreview((value) => !value)}>
+              <button className={isBeforePreview ? "mini-button active" : "mini-button"} type="button" title="Toggle between the unedited source frame and the edited preview" disabled={!canEdit} onClick={() => setIsBeforePreview((value) => !value)}>
                 {isBeforePreview ? "Before" : "After"}
               </button>
-              <button className="mini-button" type="button" disabled={!canEdit} onClick={() => zoomViewer(viewerZoom - 0.25)}>-</button>
+              <button className="mini-button" type="button" title="Zoom preview out" disabled={!canEdit} onClick={() => zoomViewer(viewerZoom - 0.25)}>-</button>
               <span>{Math.round(fitScale * viewerZoom * 100)}%</span>
-              <button className="mini-button" type="button" disabled={!canEdit} onClick={() => zoomViewer(viewerZoom + 0.25)}>+</button>
-              <button className="mini-button" type="button" disabled={!canEdit} onClick={resetViewer}>Fit</button>
+              <button className="mini-button" type="button" title="Zoom preview in" disabled={!canEdit} onClick={() => zoomViewer(viewerZoom + 0.25)}>+</button>
+              <button className="mini-button" type="button" title="Fit the preview back into the monitor" disabled={!canEdit} onClick={resetViewer}>Fit</button>
             </div>
           </div>
           <>
@@ -2687,6 +2691,7 @@ function App() {
                 onPointerUp={stopPan}
                 onPointerCancel={stopPan}
                 onWheel={wheelZoom}
+                title="Preview canvas. Drag to pan, scroll to zoom, or click to sample a color when color picking is active."
               >
                 {activeAsset ? (
                   <div
@@ -2741,19 +2746,20 @@ function App() {
 
           {!isEffectsPanelCollapsed && <div className={canEdit ? "stack-panel" : "stack-panel disabled"}>
             <div className="scope-toggle">
-              <button className={effectScope === "project" ? "toggle active" : "toggle"} type="button" onClick={() => setEffectScope("project")}>
+              <button className={effectScope === "project" ? "toggle active" : "toggle"} type="button" title="Apply effects to every media item unless an item opts out" onClick={() => setEffectScope("project")}>
                 Project
               </button>
-              <button className={effectScope === "global" ? "toggle active" : "toggle"} type="button" onClick={() => setEffectScope("global")}>
+              <button className={effectScope === "global" ? "toggle active" : "toggle"} type="button" title="Apply effects to the currently selected GIF or image" onClick={() => setEffectScope("global")}>
                 Whole GIF
               </button>
-              <button className={effectScope === "frame" ? "toggle active" : "toggle"} type="button" disabled={!selectedFrame} onClick={() => setEffectScope("frame")}>
+              <button className={effectScope === "frame" ? "toggle active" : "toggle"} type="button" title="Apply effects only to the current frame" disabled={!selectedFrame} onClick={() => setEffectScope("frame")}>
                 Frame {selectedFrame ? selectedFrame.index + 1 : "-"}
               </button>
             </div>
             <div className="effect-tools">
               <select
                 aria-label="Add effect"
+                title="Choose an effect to add to the selected scope"
                 value=""
                 onChange={(event) => {
                   if (!event.target.value) return;
@@ -2783,11 +2789,11 @@ function App() {
               </select>
 
               <div className="preset-row">
-                <input aria-label="Preset name" type="text" placeholder="Preset name" value={presetName} onChange={(event) => setPresetName(event.target.value)} />
+                <input aria-label="Preset name" title="Name for saving the current effect stack as a reusable preset" type="text" placeholder="Preset name" value={presetName} onChange={(event) => setPresetName(event.target.value)} />
                 <button className="mini-button icon-only-button" type="button" aria-label="Save current effect preset" title="Save preset" disabled={!canSavePreset} onClick={savePreset}><Icon name="save" /></button>
               </div>
 
-              <select aria-label="Load preset" value="" onChange={(event) => {
+              <select aria-label="Load preset" title="Load a saved effect preset into the current scope" value="" onChange={(event) => {
                 if (!event.target.value) return;
                 loadPreset(event.target.value);
                 event.target.value = "";
@@ -2826,6 +2832,7 @@ function App() {
                         className="drag-handle"
                         draggable={isDragDropEnabled}
                         aria-label={`Drag ${effectName(effect)} effect`}
+                        title="Drag to reorder this effect"
                         role="button"
                         onDragStart={(event) => {
                           if (!isDragDropEnabled) return;
@@ -2855,31 +2862,31 @@ function App() {
 
                   {effect.kind === "timing" && (
                     <>
-                      <label>
+                      <label title="First frame included in playback and export">
                         Trim start
                         <input type="range" min="0" max={Math.max(0, (activeAsset?.frames.length ?? 1) - 1)} value={effect.trimStart} onChange={(event) => updateEffect(effect.id, { trimStart: Number(event.target.value) })} />
                       </label>
-                      <label>
+                      <label title="Last frame included in playback and export">
                         Trim end
                         <input type="range" min="0" max={Math.max(0, (activeAsset?.frames.length ?? 1) - 1)} value={effect.trimEnd} onChange={(event) => updateEffect(effect.id, { trimEnd: Number(event.target.value) })} />
                       </label>
-                      <label>Speed {effect.speed.toFixed(2)}x<input type="range" min="0.25" max="4" step="0.25" value={effect.speed} onChange={(event) => updateEffect(effect.id, { speed: Number(event.target.value) })} /></label>
-                      <label>Loop count<input type="number" min="0" max="20" value={effect.loopCount} onChange={(event) => updateEffect(effect.id, { loopCount: Number(event.target.value) })} /></label>
-                      <button className="toggle" type="button" onClick={() => updateEffect(effect.id, { reverse: !effect.reverse })}>Reverse: {effect.reverse ? "On" : "Off"}</button>
+                      <label title="Playback/export speed multiplier">Speed {effect.speed.toFixed(2)}x<input type="range" min="0.25" max="4" step="0.25" value={effect.speed} onChange={(event) => updateEffect(effect.id, { speed: Number(event.target.value) })} /></label>
+                      <label title="GIF loop count. Use 0 for infinite looping.">Loop count<input type="number" min="0" max="20" value={effect.loopCount} onChange={(event) => updateEffect(effect.id, { loopCount: Number(event.target.value) })} /></label>
+                      <button className="toggle" type="button" title="Play frames in reverse order" onClick={() => updateEffect(effect.id, { reverse: !effect.reverse })}>Reverse: {effect.reverse ? "On" : "Off"}</button>
                     </>
                   )}
 
                   {effect.kind === "transform" && (
                     <>
-                      <label>Rotate {effect.rotate}deg<input type="range" min="-180" max="180" value={effect.rotate} onChange={(event) => updateEffect(effect.id, { rotate: Number(event.target.value) })} /></label>
-                      <label>Scale {Math.round(effect.scale * 100)}%<input type="range" min="0.25" max="2" step="0.05" value={effect.scale} onChange={(event) => updateEffect(effect.id, { scale: Number(event.target.value) })} /></label>
-                      <label>Crop left {effect.cropLeft}%<input type="range" min="0" max={100 - effect.cropWidth} value={effect.cropLeft} onChange={(event) => updateEffect(effect.id, { cropLeft: Number(event.target.value) })} /></label>
-                      <label>Crop top {effect.cropTop}%<input type="range" min="0" max={100 - effect.cropHeight} value={effect.cropTop} onChange={(event) => updateEffect(effect.id, { cropTop: Number(event.target.value) })} /></label>
-                      <label>Crop width {effect.cropWidth}%<input type="range" min="10" max={100 - effect.cropLeft} value={effect.cropWidth} onChange={(event) => updateEffect(effect.id, { cropWidth: Number(event.target.value) })} /></label>
-                      <label>Crop height {effect.cropHeight}%<input type="range" min="10" max={100 - effect.cropTop} value={effect.cropHeight} onChange={(event) => updateEffect(effect.id, { cropHeight: Number(event.target.value) })} /></label>
+                      <label title="Rotate the image around its center">Rotate {effect.rotate}deg<input type="range" min="-180" max="180" value={effect.rotate} onChange={(event) => updateEffect(effect.id, { rotate: Number(event.target.value) })} /></label>
+                      <label title="Scale the image before compositing it on the canvas">Scale {Math.round(effect.scale * 100)}%<input type="range" min="0.25" max="2" step="0.05" value={effect.scale} onChange={(event) => updateEffect(effect.id, { scale: Number(event.target.value) })} /></label>
+                      <label title="Move the crop window from the left edge">Crop left {effect.cropLeft}%<input type="range" min="0" max={100 - effect.cropWidth} value={effect.cropLeft} onChange={(event) => updateEffect(effect.id, { cropLeft: Number(event.target.value) })} /></label>
+                      <label title="Move the crop window from the top edge">Crop top {effect.cropTop}%<input type="range" min="0" max={100 - effect.cropHeight} value={effect.cropTop} onChange={(event) => updateEffect(effect.id, { cropTop: Number(event.target.value) })} /></label>
+                      <label title="Width of the retained crop area">Crop width {effect.cropWidth}%<input type="range" min="10" max={100 - effect.cropLeft} value={effect.cropWidth} onChange={(event) => updateEffect(effect.id, { cropWidth: Number(event.target.value) })} /></label>
+                      <label title="Height of the retained crop area">Crop height {effect.cropHeight}%<input type="range" min="10" max={100 - effect.cropTop} value={effect.cropHeight} onChange={(event) => updateEffect(effect.id, { cropHeight: Number(event.target.value) })} /></label>
                       <div className="split-buttons">
-                        <button className="toggle" type="button" onClick={() => updateEffect(effect.id, { flipH: !effect.flipH })}>Flip H</button>
-                        <button className="toggle" type="button" onClick={() => updateEffect(effect.id, { flipV: !effect.flipV })}>Flip V</button>
+                        <button className="toggle" type="button" title="Mirror the image horizontally" onClick={() => updateEffect(effect.id, { flipH: !effect.flipH })}>Flip H</button>
+                        <button className="toggle" type="button" title="Mirror the image vertically" onClick={() => updateEffect(effect.id, { flipV: !effect.flipV })}>Flip V</button>
                       </div>
                     </>
                   )}
@@ -2887,15 +2894,15 @@ function App() {
                   {effect.kind === "canvas-style" && (
                     <>
                       <ColorField label="Background" value={effect.backgroundColor} onChange={(backgroundColor) => updateEffect(effect.id, { backgroundColor })} onPickPreview={() => startPreviewColorPick({ effectId: effect.id, field: "backgroundColor" })} />
-                      <label className="check-row"><input type="checkbox" checked={effect.transparentBackground} onChange={(event) => updateEffect(effect.id, { transparentBackground: event.target.checked })} /><span>Transparent background</span></label>
-                      <label>Rounded corners {effect.cornerRadius}px<input type="range" min="0" max="128" value={effect.cornerRadius} onChange={(event) => updateEffect(effect.id, { cornerRadius: Number(event.target.value) })} /></label>
-                      <label>Border width {effect.borderWidth}px<input type="range" min="0" max="48" value={effect.borderWidth} onChange={(event) => updateEffect(effect.id, { borderWidth: Number(event.target.value) })} /></label>
+                      <label className="check-row" title="Keep the canvas background transparent instead of filling it with the background color"><input type="checkbox" checked={effect.transparentBackground} onChange={(event) => updateEffect(effect.id, { transparentBackground: event.target.checked })} /><span>Transparent background</span></label>
+                      <label title="Round the output canvas corners">Rounded corners {effect.cornerRadius}px<input type="range" min="0" max="128" value={effect.cornerRadius} onChange={(event) => updateEffect(effect.id, { cornerRadius: Number(event.target.value) })} /></label>
+                      <label title="Add an outline around the output canvas">Border width {effect.borderWidth}px<input type="range" min="0" max="48" value={effect.borderWidth} onChange={(event) => updateEffect(effect.id, { borderWidth: Number(event.target.value) })} /></label>
                       <ColorField label="Border color" value={effect.borderColor} onChange={(borderColor) => updateEffect(effect.id, { borderColor })} onPickPreview={() => startPreviewColorPick({ effectId: effect.id, field: "borderColor" })} />
                     </>
                   )}
 
                   {effect.kind === "preset" && (
-                    <label>
+                    <label title="Apply a built-in color preset">
                       Preset
                       <select value={effect.preset} onChange={(event) => updateEffect(effect.id, { preset: event.target.value as Preset })}>
                         <option value="grayscale">Grayscale</option>
@@ -2913,18 +2920,18 @@ function App() {
 
                   {effect.kind === "adjust" && (
                     <>
-                      <label>Brightness {effect.brightness}<input type="range" min="-100" max="100" value={effect.brightness} onChange={(event) => updateEffect(effect.id, { brightness: Number(event.target.value) })} /></label>
-                      <label>Contrast {effect.contrast}<input type="range" min="-100" max="100" value={effect.contrast} onChange={(event) => updateEffect(effect.id, { contrast: Number(event.target.value) })} /></label>
-                      <label>Saturation {effect.saturation}<input type="range" min="-100" max="100" value={effect.saturation} onChange={(event) => updateEffect(effect.id, { saturation: Number(event.target.value) })} /></label>
-                      <label>Lightness {effect.lightness}<input type="range" min="-100" max="100" value={effect.lightness} onChange={(event) => updateEffect(effect.id, { lightness: Number(event.target.value) })} /></label>
-                      <label>Hue {effect.hue}deg<input type="range" min="-180" max="180" value={effect.hue} onChange={(event) => updateEffect(effect.id, { hue: Number(event.target.value) })} /></label>
+                      <label title="Make the image brighter or darker">Brightness {effect.brightness}<input type="range" min="-100" max="100" value={effect.brightness} onChange={(event) => updateEffect(effect.id, { brightness: Number(event.target.value) })} /></label>
+                      <label title="Increase or reduce tonal separation">Contrast {effect.contrast}<input type="range" min="-100" max="100" value={effect.contrast} onChange={(event) => updateEffect(effect.id, { contrast: Number(event.target.value) })} /></label>
+                      <label title="Increase or reduce color intensity">Saturation {effect.saturation}<input type="range" min="-100" max="100" value={effect.saturation} onChange={(event) => updateEffect(effect.id, { saturation: Number(event.target.value) })} /></label>
+                      <label title="Shift overall lightness without changing hue">Lightness {effect.lightness}<input type="range" min="-100" max="100" value={effect.lightness} onChange={(event) => updateEffect(effect.id, { lightness: Number(event.target.value) })} /></label>
+                      <label title="Rotate colors around the hue wheel">Hue {effect.hue}deg<input type="range" min="-180" max="180" value={effect.hue} onChange={(event) => updateEffect(effect.id, { hue: Number(event.target.value) })} /></label>
                     </>
                   )}
 
                   {effect.kind === "tint" && (
                     <>
                       <ColorField label="Tint color" value={effect.color} onChange={(color) => updateEffect(effect.id, { color })} onPickPreview={() => startPreviewColorPick({ effectId: effect.id, field: "color" })} />
-                      <label>Tint mix {effect.amount}%<input type="range" min="0" max="100" value={effect.amount} onChange={(event) => updateEffect(effect.id, { amount: Number(event.target.value) })} /></label>
+                      <label title="Blend the tint color over the image">Tint mix {effect.amount}%<input type="range" min="0" max="100" value={effect.amount} onChange={(event) => updateEffect(effect.id, { amount: Number(event.target.value) })} /></label>
                     </>
                   )}
 
@@ -2932,54 +2939,54 @@ function App() {
                     <>
                       <ColorField label="Change color" value={effect.from} onChange={(from) => updateEffect(effect.id, { from })} onPickPreview={() => startPreviewColorPick({ effectId: effect.id, field: "from" })} />
                       <ColorField label="To color" value={effect.to} onChange={(to) => updateEffect(effect.id, { to })} onPickPreview={() => startPreviewColorPick({ effectId: effect.id, field: "to" })} />
-                      <label>Tolerance {effect.tolerance}%<input type="range" min="0" max="100" value={effect.tolerance} onChange={(event) => updateEffect(effect.id, { tolerance: Number(event.target.value) })} /></label>
-                      <label>Softness {effect.softness}%<input type="range" min="0" max="100" value={effect.softness} onChange={(event) => updateEffect(effect.id, { softness: Number(event.target.value) })} /></label>
+                      <label title="How close a pixel must be to the chosen source color">Tolerance {effect.tolerance}%<input type="range" min="0" max="100" value={effect.tolerance} onChange={(event) => updateEffect(effect.id, { tolerance: Number(event.target.value) })} /></label>
+                      <label title="Feather the edge of the color replacement">Softness {effect.softness}%<input type="range" min="0" max="100" value={effect.softness} onChange={(event) => updateEffect(effect.id, { softness: Number(event.target.value) })} /></label>
                     </>
                   )}
 
                   {effect.kind === "background-removal" && (
                     <>
                       <ColorField label="Remove color" value={effect.color} onChange={(color) => updateEffect(effect.id, { color })} onPickPreview={() => startPreviewColorPick({ effectId: effect.id, field: "color" })} />
-                      <label>Tolerance {effect.tolerance}%<input type="range" min="0" max="100" value={effect.tolerance} onChange={(event) => updateEffect(effect.id, { tolerance: Number(event.target.value) })} /></label>
-                      <label>Softness {effect.softness}%<input type="range" min="0" max="100" value={effect.softness} onChange={(event) => updateEffect(effect.id, { softness: Number(event.target.value) })} /></label>
+                      <label title="How close a pixel must be to the removal key color">Tolerance {effect.tolerance}%<input type="range" min="0" max="100" value={effect.tolerance} onChange={(event) => updateEffect(effect.id, { tolerance: Number(event.target.value) })} /></label>
+                      <label title="Feather the removed edge for smoother transparency">Softness {effect.softness}%<input type="range" min="0" max="100" value={effect.softness} onChange={(event) => updateEffect(effect.id, { softness: Number(event.target.value) })} /></label>
                     </>
                   )}
 
-                  {effect.kind === "blur" && <label>Radius {effect.radius}px<input type="range" min="0" max="12" step="0.5" value={effect.radius} onChange={(event) => updateEffect(effect.id, { radius: Number(event.target.value) })} /></label>}
-                  {effect.kind === "vignette" && <label>Amount {effect.amount}%<input type="range" min="0" max="100" value={effect.amount} onChange={(event) => updateEffect(effect.id, { amount: Number(event.target.value) })} /></label>}
-                  {effect.kind === "noise" && <label>Amount {effect.amount}%<input type="range" min="0" max="60" value={effect.amount} onChange={(event) => updateEffect(effect.id, { amount: Number(event.target.value) })} /></label>}
-                  {effect.kind === "posterize" && <label>Levels {effect.levels}<input type="range" min="2" max="16" value={effect.levels} onChange={(event) => updateEffect(effect.id, { levels: Number(event.target.value) })} /></label>}
-                  {effect.kind === "solarize" && <label>Threshold {effect.threshold}%<input type="range" min="0" max="100" value={effect.threshold} onChange={(event) => updateEffect(effect.id, { threshold: Number(event.target.value) })} /></label>}
-                  {effect.kind === "emboss" && <label>Strength {effect.strength}%<input type="range" min="0" max="160" value={effect.strength} onChange={(event) => updateEffect(effect.id, { strength: Number(event.target.value) })} /></label>}
-                  {effect.kind === "oil-paint" && <label>Radius {effect.radius}px<input type="range" min="1" max="4" value={effect.radius} onChange={(event) => updateEffect(effect.id, { radius: Number(event.target.value) })} /></label>}
+                  {effect.kind === "blur" && <label title="Soften the image by spreading neighboring pixels">Radius {effect.radius}px<input type="range" min="0" max="12" step="0.5" value={effect.radius} onChange={(event) => updateEffect(effect.id, { radius: Number(event.target.value) })} /></label>}
+                  {effect.kind === "vignette" && <label title="Darken the outer edges of the frame">Amount {effect.amount}%<input type="range" min="0" max="100" value={effect.amount} onChange={(event) => updateEffect(effect.id, { amount: Number(event.target.value) })} /></label>}
+                  {effect.kind === "noise" && <label title="Add random grain to the image">Amount {effect.amount}%<input type="range" min="0" max="60" value={effect.amount} onChange={(event) => updateEffect(effect.id, { amount: Number(event.target.value) })} /></label>}
+                  {effect.kind === "posterize" && <label title="Reduce the image to fewer color steps">Levels {effect.levels}<input type="range" min="2" max="16" value={effect.levels} onChange={(event) => updateEffect(effect.id, { levels: Number(event.target.value) })} /></label>}
+                  {effect.kind === "solarize" && <label title="Invert pixels above this brightness threshold">Threshold {effect.threshold}%<input type="range" min="0" max="100" value={effect.threshold} onChange={(event) => updateEffect(effect.id, { threshold: Number(event.target.value) })} /></label>}
+                  {effect.kind === "emboss" && <label title="Create a raised edge relief effect">Strength {effect.strength}%<input type="range" min="0" max="160" value={effect.strength} onChange={(event) => updateEffect(effect.id, { strength: Number(event.target.value) })} /></label>}
+                  {effect.kind === "oil-paint" && <label title="Group nearby pixels into painterly blobs">Radius {effect.radius}px<input type="range" min="1" max="4" value={effect.radius} onChange={(event) => updateEffect(effect.id, { radius: Number(event.target.value) })} /></label>}
                   {effect.kind === "distortion" && (
                     <>
-                      <label>Mode<select value={effect.mode} onChange={(event) => updateEffect(effect.id, { mode: event.target.value as DistortionEffect["mode"] })}><option value="wave">Wave</option><option value="swirl">Swirl</option><option value="implode">Implode</option></select></label>
-                      <label>Amount {effect.amount}%<input type="range" min="0" max="100" value={effect.amount} onChange={(event) => updateEffect(effect.id, { amount: Number(event.target.value) })} /></label>
-                      <label>Radius {effect.radius}%<input type="range" min="10" max="100" value={effect.radius} onChange={(event) => updateEffect(effect.id, { radius: Number(event.target.value) })} /></label>
-                      <label>Frequency {effect.frequency}<input type="range" min="1" max="12" value={effect.frequency} onChange={(event) => updateEffect(effect.id, { frequency: Number(event.target.value) })} /></label>
+                      <label title="Choose the distortion shape">Mode<select value={effect.mode} onChange={(event) => updateEffect(effect.id, { mode: event.target.value as DistortionEffect["mode"] })}><option value="wave">Wave</option><option value="swirl">Swirl</option><option value="implode">Implode</option></select></label>
+                      <label title="Strength of the distortion">Amount {effect.amount}%<input type="range" min="0" max="100" value={effect.amount} onChange={(event) => updateEffect(effect.id, { amount: Number(event.target.value) })} /></label>
+                      <label title="Area affected by the distortion">Radius {effect.radius}%<input type="range" min="10" max="100" value={effect.radius} onChange={(event) => updateEffect(effect.id, { radius: Number(event.target.value) })} /></label>
+                      <label title="Number of wave cycles used by wave distortion">Frequency {effect.frequency}<input type="range" min="1" max="12" value={effect.frequency} onChange={(event) => updateEffect(effect.id, { frequency: Number(event.target.value) })} /></label>
                     </>
                   )}
                   {effect.kind === "text-overlay" && (
                     <>
-                      <label>Text<input type="text" value={effect.text} onChange={(event) => updateEffect(effect.id, { text: event.target.value })} /></label>
+                      <label title="Text drawn over the GIF">Text<input type="text" value={effect.text} onChange={(event) => updateEffect(effect.id, { text: event.target.value })} /></label>
                       <div className="split-buttons">
-                        <label>X {effect.x}%<input type="range" min="0" max="100" value={effect.x} onChange={(event) => updateEffect(effect.id, { x: Number(event.target.value) })} /></label>
-                        <label>Y {effect.y}%<input type="range" min="0" max="100" value={effect.y} onChange={(event) => updateEffect(effect.id, { y: Number(event.target.value) })} /></label>
+                        <label title="Horizontal text position">X {effect.x}%<input type="range" min="0" max="100" value={effect.x} onChange={(event) => updateEffect(effect.id, { x: Number(event.target.value) })} /></label>
+                        <label title="Vertical text position">Y {effect.y}%<input type="range" min="0" max="100" value={effect.y} onChange={(event) => updateEffect(effect.id, { y: Number(event.target.value) })} /></label>
                       </div>
-                      <label>Size {effect.size}px<input type="range" min="8" max="180" value={effect.size} onChange={(event) => updateEffect(effect.id, { size: Number(event.target.value) })} /></label>
-                      <label>Opacity {effect.opacity}%<input type="range" min="0" max="100" value={effect.opacity} onChange={(event) => updateEffect(effect.id, { opacity: Number(event.target.value) })} /></label>
-                      <label>Rotate {effect.rotate}deg<input type="range" min="-180" max="180" value={effect.rotate} onChange={(event) => updateEffect(effect.id, { rotate: Number(event.target.value) })} /></label>
+                      <label title="Text size in pixels">Size {effect.size}px<input type="range" min="8" max="180" value={effect.size} onChange={(event) => updateEffect(effect.id, { size: Number(event.target.value) })} /></label>
+                      <label title="Text transparency">Opacity {effect.opacity}%<input type="range" min="0" max="100" value={effect.opacity} onChange={(event) => updateEffect(effect.id, { opacity: Number(event.target.value) })} /></label>
+                      <label title="Rotate the text around its anchor point">Rotate {effect.rotate}deg<input type="range" min="-180" max="180" value={effect.rotate} onChange={(event) => updateEffect(effect.id, { rotate: Number(event.target.value) })} /></label>
                       <ColorField label="Text color" value={effect.color} onChange={(color) => updateEffect(effect.id, { color })} onPickPreview={() => startPreviewColorPick({ effectId: effect.id, field: "color" })} />
                       <ColorField label="Stroke color" value={effect.strokeColor} onChange={(strokeColor) => updateEffect(effect.id, { strokeColor })} onPickPreview={() => startPreviewColorPick({ effectId: effect.id, field: "strokeColor" })} />
-                      <label>Stroke {effect.strokeWidth}px<input type="range" min="0" max="16" value={effect.strokeWidth} onChange={(event) => updateEffect(effect.id, { strokeWidth: Number(event.target.value) })} /></label>
-                      <label>Align<select value={effect.align} onChange={(event) => updateEffect(effect.id, { align: event.target.value as TextOverlayEffect["align"] })}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
-                      <label>Weight<select value={effect.weight} onChange={(event) => updateEffect(effect.id, { weight: event.target.value as TextOverlayEffect["weight"] })}><option value="400">Regular</option><option value="700">Bold</option><option value="900">Heavy</option></select></label>
+                      <label title="Outline thickness around the text">Stroke {effect.strokeWidth}px<input type="range" min="0" max="16" value={effect.strokeWidth} onChange={(event) => updateEffect(effect.id, { strokeWidth: Number(event.target.value) })} /></label>
+                      <label title="Text alignment relative to the X position">Align<select value={effect.align} onChange={(event) => updateEffect(effect.id, { align: event.target.value as TextOverlayEffect["align"] })}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
+                      <label title="Text font weight">Weight<select value={effect.weight} onChange={(event) => updateEffect(effect.id, { weight: event.target.value as TextOverlayEffect["weight"] })}><option value="400">Regular</option><option value="700">Bold</option><option value="900">Heavy</option></select></label>
                     </>
                   )}
                   {effect.kind === "image-overlay" && (
                     <>
-                      <label>Overlay image<input type="file" accept="image/png,image/jpeg,image/jpg,image/webp,image/avif,image/gif" onChange={async (event) => {
+                      <label title="Choose an image to draw on top of the GIF">Overlay image<input type="file" accept="image/png,image/jpeg,image/jpg,image/webp,image/avif,image/gif" onChange={async (event) => {
                         const file = event.target.files?.[0];
                         if (!file) return;
                         const imageDataUrl = await fileToDataUrl(file);
@@ -2988,12 +2995,12 @@ function App() {
                       }} /></label>
                       <span className="field-note">{effect.imageDataUrl ? effect.imageName : "Choose an image to overlay"}</span>
                       <div className="split-buttons">
-                        <label>X {effect.x}%<input type="range" min="0" max="100" value={effect.x} onChange={(event) => updateEffect(effect.id, { x: Number(event.target.value) })} /></label>
-                        <label>Y {effect.y}%<input type="range" min="0" max="100" value={effect.y} onChange={(event) => updateEffect(effect.id, { y: Number(event.target.value) })} /></label>
+                        <label title="Horizontal overlay image position">X {effect.x}%<input type="range" min="0" max="100" value={effect.x} onChange={(event) => updateEffect(effect.id, { x: Number(event.target.value) })} /></label>
+                        <label title="Vertical overlay image position">Y {effect.y}%<input type="range" min="0" max="100" value={effect.y} onChange={(event) => updateEffect(effect.id, { y: Number(event.target.value) })} /></label>
                       </div>
-                      <label>Scale {effect.scale}%<input type="range" min="5" max="300" value={effect.scale} onChange={(event) => updateEffect(effect.id, { scale: Number(event.target.value) })} /></label>
-                      <label>Opacity {effect.opacity}%<input type="range" min="0" max="100" value={effect.opacity} onChange={(event) => updateEffect(effect.id, { opacity: Number(event.target.value) })} /></label>
-                      <label>Rotate {effect.rotate}deg<input type="range" min="-180" max="180" value={effect.rotate} onChange={(event) => updateEffect(effect.id, { rotate: Number(event.target.value) })} /></label>
+                      <label title="Size of the overlay image relative to its original dimensions">Scale {effect.scale}%<input type="range" min="5" max="300" value={effect.scale} onChange={(event) => updateEffect(effect.id, { scale: Number(event.target.value) })} /></label>
+                      <label title="Overlay image transparency">Opacity {effect.opacity}%<input type="range" min="0" max="100" value={effect.opacity} onChange={(event) => updateEffect(effect.id, { opacity: Number(event.target.value) })} /></label>
+                      <label title="Rotate the overlay image around its center">Rotate {effect.rotate}deg<input type="range" min="-180" max="180" value={effect.rotate} onChange={(event) => updateEffect(effect.id, { rotate: Number(event.target.value) })} /></label>
                     </>
                   )}
                 </section>
@@ -3017,6 +3024,7 @@ function App() {
             <input
               className="scrubber"
               type="range"
+              title="Scrub through the animation frames"
               min="0"
               max={Math.max(0, playableFrames.length - 1)}
               value={Math.min(currentFrame, Math.max(0, playableFrames.length - 1))}
@@ -3032,6 +3040,7 @@ function App() {
                   className={index === currentFrame ? "frame-chip active" : "frame-chip"}
                   key={`${frame.index}-${index}`}
                   type="button"
+                  title={`Jump to frame ${frame.index + 1} and edit frame-specific effects`}
                   onClick={() => {
                     setIsPlaying(false);
                     setCurrentFrame(index);
@@ -3067,9 +3076,9 @@ function App() {
               ))}
             </div>
             <div className="walkthrough-actions">
-              <button className="button quiet" type="button" onClick={closeWalkthrough}>Close</button>
-              <button className="button" type="button" disabled={walkthroughStepIndex === 0} onClick={previousWalkthroughStep}>Back</button>
-              <button className="button primary" type="button" onClick={nextWalkthroughStep}>{walkthroughStepIndex === walkthroughSteps.length - 1 ? "Finish" : "Next"}</button>
+              <button className="button quiet" type="button" title="Close the walkthrough" onClick={closeWalkthrough}>Close</button>
+              <button className="button" type="button" title="Go back to the previous walkthrough step" disabled={walkthroughStepIndex === 0} onClick={previousWalkthroughStep}>Back</button>
+              <button className="button primary" type="button" title={walkthroughStepIndex === walkthroughSteps.length - 1 ? "Finish the walkthrough" : "Go to the next walkthrough step"} onClick={nextWalkthroughStep}>{walkthroughStepIndex === walkthroughSteps.length - 1 ? "Finish" : "Next"}</button>
             </div>
           </section>
         </div>
@@ -3099,25 +3108,25 @@ function App() {
             <div className="modal-grid">
               <label>
                 Save as
-                <input type="text" value={exportSettings.fileName} onChange={(event) => setExportSettings((value) => ({ ...value, fileName: event.target.value }))} />
+                <input type="text" title="Base file name for the rendered GIF download" value={exportSettings.fileName} onChange={(event) => setExportSettings((value) => ({ ...value, fileName: event.target.value }))} />
               </label>
-              <label>
+              <label title="Lower numbers usually produce cleaner GIF palettes; higher numbers can render faster/smaller">
                 Palette quality {exportSettings.quality}
                 <input type="range" min="1" max="20" value={exportSettings.quality} onChange={(event) => setExportSettings((value) => ({ ...value, quality: Number(event.target.value) }))} />
               </label>
-              <label>
+              <label title="Number of gif.js workers to use during rendering">
                 Worker count
                 <input type="number" min="1" max="8" value={exportSettings.workers} onChange={(event) => setExportSettings((value) => ({ ...value, workers: Number(event.target.value) || 1 }))} />
               </label>
-              <label className="check-row">
+              <label className="check-row" title="Dithering can smooth gradients but may add grain or increase file size">
                 <input type="checkbox" checked={exportSettings.dither} onChange={(event) => setExportSettings((value) => ({ ...value, dither: event.target.checked }))} />
                 <span>Enable dithering</span>
               </label>
-              <label className="check-row">
+              <label className="check-row" title="Use a transparency optimization pass before GIF encoding">
                 <input type="checkbox" checked={exportSettings.optimizeTransparency} onChange={(event) => setExportSettings((value) => ({ ...value, optimizeTransparency: event.target.checked }))} />
                 <span>Optimize transparency for smaller GIFs</span>
               </label>
-              <label>
+              <label title="Comma-separated tags to send when uploading the rendered GIF to GIPHY">
                 GIPHY tags
                 <input type="text" value={giphyTags} placeholder="reaction, ui, gif" onChange={(event) => setGiphyTags(event.target.value)} />
               </label>
@@ -3153,24 +3162,24 @@ function App() {
             )}
 
             <div className="modal-actions">
-              <button className="button export" type="button" disabled={!canEdit || exportProgress !== null} onClick={exportGif}>
+              <button className="button export" type="button" title="Render the active edited animation as a GIF" disabled={!canEdit || exportProgress !== null} onClick={exportGif}>
                 {exportProgress !== null ? `Rendering ${Math.round(exportProgress * 100)}%` : "Render GIF"}
               </button>
               {exportProgress !== null && (
-                <button className="button danger" type="button" onClick={cancelExport}>
+                <button className="button danger" type="button" title="Mark the current render to be discarded once gif.js finishes" onClick={cancelExport}>
                   Discard when render finishes
                 </button>
               )}
               {downloadUrl && (
-                <a className="button download" href={downloadUrl} download={`${exportBaseName}.gif`}>
+                <a className="button download" title="Download the rendered GIF file" href={downloadUrl} download={`${exportBaseName}.gif`}>
                   Download GIF
                 </a>
               )}
-              <button className="button quiet" type="button" disabled={!downloadUrl || isUploadingToGiphy || exportProgress !== null} onClick={() => void uploadToGiphy()}>
+              <button className="button quiet" type="button" title="Upload the rendered GIF to GIPHY using the server API key" disabled={!downloadUrl || isUploadingToGiphy || exportProgress !== null} onClick={() => void uploadToGiphy()}>
                 {isUploadingToGiphy ? "Uploading to GIPHY..." : "Upload to GIPHY"}
               </button>
               {giphyUploadResult?.url && (
-                <a className="button download" href={giphyUploadResult.url} target="_blank" rel="noreferrer">
+                <a className="button download" title="Open the uploaded GIF on GIPHY" href={giphyUploadResult.url} target="_blank" rel="noreferrer">
                   Open on GIPHY
                 </a>
               )}
@@ -3196,16 +3205,16 @@ function App() {
             }}>
               <label>
                 Search
-                <input type="text" value={iconSearchTerm} placeholder="cat, loader, arrow..." onChange={(event) => setIconSearchTerm(event.target.value)} />
+                <input type="text" title="Search Magnific animated icons by keyword" value={iconSearchTerm} placeholder="cat, loader, arrow..." onChange={(event) => setIconSearchTerm(event.target.value)} />
               </label>
-              <label>
+              <label title="Sort icon results by recent uploads or relevance">
                 Order
                 <select value={iconOrder} onChange={(event) => setIconOrder(event.target.value as MagnificIconOrder)}>
                   <option value="recent">Recent</option>
                   <option value="relevance">Relevance</option>
                 </select>
               </label>
-              <label>
+              <label title="Filter animated icons by visual style">
                 Style
                 <select value={iconStyleFilter} onChange={(event) => setIconStyleFilter(event.target.value as MagnificIconStyleFilter)}>
                   <option value="all">All animated</option>
@@ -3213,7 +3222,7 @@ function App() {
                   <option value="basic-accent-outline">Basic Accent Outline</option>
                 </select>
               </label>
-              <button className="button primary" type="submit" disabled={iconLoading || iconImportingId !== null}>
+              <button className="button primary" type="submit" title="Search animated icons" disabled={iconLoading || iconImportingId !== null}>
                 {iconLoading ? "Searching..." : "Search"}
               </button>
             </form>
@@ -3247,7 +3256,7 @@ function App() {
                       <strong title={icon.name}>{icon.name}</strong>
                       <small>{icon.style.name} · {icon.author.name}</small>
                     </div>
-                    <button className="button icon-import-button" type="button" disabled={iconLoading || iconImportingId !== null} onClick={() => void importMagnificIcon(icon)}>
+                    <button className="button icon-import-button" type="button" title="Download this animated icon and add it to the media bin" disabled={iconLoading || iconImportingId !== null} onClick={() => void importMagnificIcon(icon)}>
                       {isImporting ? "Adding..." : "Add to project"}
                     </button>
                   </article>
@@ -3256,7 +3265,7 @@ function App() {
             </div>
 
             <div className="modal-actions">
-              <button className="button" type="button" disabled={iconLoading || iconImportingId !== null || iconPagination.current_page >= iconPagination.last_page} onClick={() => void loadMagnificIcons(iconPagination.current_page + 1, true)}>
+              <button className="button" type="button" title="Load the next page of animated icon results" disabled={iconLoading || iconImportingId !== null || iconPagination.current_page >= iconPagination.last_page} onClick={() => void loadMagnificIcons(iconPagination.current_page + 1, true)}>
                 {iconLoading && iconPagination.current_page > 1 ? "Loading..." : "Load more"}
               </button>
             </div>
@@ -3281,9 +3290,9 @@ function App() {
             }}>
               <label>
                 Search
-                <input type="text" value={giphySearchTerm} placeholder="reaction, dancing, loader..." onChange={(event) => setGiphySearchTerm(event.target.value)} />
+                <input type="text" title="Search GIPHY by keyword; leave blank for trending GIFs" value={giphySearchTerm} placeholder="reaction, dancing, loader..." onChange={(event) => setGiphySearchTerm(event.target.value)} />
               </label>
-              <button className="button primary" type="submit" disabled={giphyLoading || giphyImportingId !== null}>
+              <button className="button primary" type="submit" title="Search GIPHY for importable GIFs" disabled={giphyLoading || giphyImportingId !== null}>
                 {giphyLoading ? "Searching..." : "Search"}
               </button>
             </form>
@@ -3318,7 +3327,7 @@ function App() {
                       <strong title={title}>{title}</strong>
                       <small>GIPHY · {gif.id}</small>
                     </div>
-                    <button className="button icon-import-button" type="button" disabled={giphyLoading || giphyImportingId !== null} onClick={() => void importGiphyGif(gif)}>
+                    <button className="button icon-import-button" type="button" title="Download this GIPHY GIF and add it to the media bin" disabled={giphyLoading || giphyImportingId !== null} onClick={() => void importGiphyGif(gif)}>
                       {isImporting ? "Adding..." : "Add to project"}
                     </button>
                   </article>
@@ -3327,7 +3336,7 @@ function App() {
             </div>
 
             <div className="modal-actions">
-              <button className="button" type="button" disabled={giphyLoading || giphyImportingId !== null || giphyResults.length >= giphyPagination.total_count} onClick={() => void loadGiphyGifs(giphyPagination.offset + giphyPagination.count, true)}>
+              <button className="button" type="button" title="Load more GIPHY results" disabled={giphyLoading || giphyImportingId !== null || giphyResults.length >= giphyPagination.total_count} onClick={() => void loadGiphyGifs(giphyPagination.offset + giphyPagination.count, true)}>
                 {giphyLoading && giphyResults.length > 0 ? "Loading..." : "Load more"}
               </button>
             </div>

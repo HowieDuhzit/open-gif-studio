@@ -354,3 +354,7 @@ Walkthrough help plan:
 - [x] Highlight each explained region using measured target rectangles so the tour follows the actual responsive layout.
 - [x] Reduce walkthrough dimming/blur and constrain the tour card so controls remain visible at shorter viewport heights.
 - [x] Remove internal walkthrough card scrolling and adjust no-scroll card placement.
+
+Mouseover help text follow-up:
+
+- [x] Add native hover help titles to primary buttons, media controls, preview controls, timeline controls, effect controls, export settings, and GIF/icon browser actions.
