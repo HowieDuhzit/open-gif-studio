@@ -1,4 +1,5 @@
 import { ChangeEvent, DragEvent, MouseEvent, PointerEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import GIF from "gif.js";
 import JSZip from "jszip";
 import gifDecodeWorkerUrl from "./gifDecodeWorker.js?worker&url";
@@ -138,6 +139,12 @@ type GiphySearchResponse = {
   pagination: GiphyPagination;
 };
 
+type WalkthroughStep = {
+  target: string;
+  title: string;
+  body: string;
+};
+
 type WorkerDecodedFrame = {
   index: number;
   delay: number;
@@ -194,6 +201,15 @@ const maxGifPixels = 16_000_000;
 const giphyPageSize = 24;
 const initialGiphyPagination: GiphyPagination = { offset: 0, total_count: 0, count: 0 };
 const initialMagnificPagination: MagnificPagination = { current_page: 1, per_page: 24, last_page: 1, total: 0 };
+const walkthroughSteps: WalkthroughStep[] = [
+  { target: "topbar", title: "Command bar", body: "Start here. Load a project or media, save your work, undo or redo edits, reset changes, switch themes, and export finished GIFs from this top bar." },
+  { target: "media-bin", title: "Media bin", body: "This panel holds every imported GIF or image. Use + for local files, GIPHY for web GIFs, the sparkle button for animated icons, and the asset controls to hide, isolate, rename, reorder, or remove media." },
+  { target: "preview", title: "Preview monitor", body: "The center monitor shows the active frame with your current edits. Use After/Before to compare, zoom or fit the canvas, drag to pan, and sample colors from the preview when a color picker is active." },
+  { target: "transport", title: "Playback controls", body: "Use these controls to jump to the first frame, play or pause, step frame by frame, duplicate the current frame, or delete it from the animation." },
+  { target: "effects", title: "Effects inspector", body: "Effects are applied here. Choose whether an effect targets the whole project, the selected GIF, or one frame; then stack, reorder, save presets, and tune each effect's controls." },
+  { target: "timeline", title: "Timeline", body: "Scrub through the animation here. Click a thumbnail to jump to that frame and switch the inspector into frame-specific editing." },
+  { target: "status", title: "Status bar", body: "The bottom bar reports import, export, project, size, timing, and effect status. If something is decoding, exporting, or blocked, check this area first." },
+];
 const magnificStyleNames: Record<MagnificIconStyleFilter, string | null> = {
   all: null,
   "basic-accent-lineal-color": "Basic Accent Lineal Color",
@@ -1402,6 +1418,8 @@ function App() {
   const [fitScale, setFitScale] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [overlayImageVersion, setOverlayImageVersion] = useState(0);
+  const [walkthroughStepIndex, setWalkthroughStepIndex] = useState<number | null>(null);
+  const [walkthroughRect, setWalkthroughRect] = useState<DOMRect | null>(null);
   const previewRef = useRef<HTMLCanvasElement>(null);
   const exportPreviewRef = useRef<HTMLCanvasElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
@@ -1433,7 +1451,9 @@ function App() {
   const canSavePreset = activeEffects.length > 0;
   const exportBaseName = safeFileBase(exportSettings.fileName, defaultExportSettings.fileName);
   const exportStats = useMemo(() => getExportStats(activeAsset, editor, outputSize), [activeAsset, editor, outputSize]);
-  const isAnyModalOpen = isExportModalOpen || isIconModalOpen || isGiphyModalOpen;
+  const isWalkthroughOpen = walkthroughStepIndex !== null;
+  const walkthroughStep = walkthroughStepIndex !== null ? walkthroughSteps[walkthroughStepIndex] : null;
+  const isAnyModalOpen = isExportModalOpen || isIconModalOpen || isGiphyModalOpen || isWalkthroughOpen;
   const isDragDropEnabled = !isAnyModalOpen;
   const visibleAssetCount = project?.assets.filter((asset) => !asset.hidden).length ?? 0;
   const projectWideEffectsCount = projectEffects.length;
@@ -1461,6 +1481,53 @@ function App() {
     window.addEventListener(overlayImageLoadedEvent, refreshOverlays);
     return () => window.removeEventListener(overlayImageLoadedEvent, refreshOverlays);
   }, []);
+
+  useEffect(() => {
+    if (!walkthroughStep) {
+      setWalkthroughRect(null);
+      return;
+    }
+
+    let animationFrame = 0;
+    const selector = `[data-tour="${walkthroughStep.target}"]`;
+
+    const updateRect = () => {
+      const target = document.querySelector<HTMLElement>(selector);
+      if (!target) {
+        setWalkthroughRect(null);
+        return;
+      }
+      setWalkthroughRect(target.getBoundingClientRect());
+    };
+
+    const scheduleUpdate = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(updateRect);
+    };
+
+    const target = document.querySelector<HTMLElement>(selector);
+    target?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    scheduleUpdate();
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, true);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate, true);
+    };
+  }, [walkthroughStep]);
+
+  useEffect(() => {
+    if (!isWalkthroughOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setWalkthroughStepIndex(null);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isWalkthroughOpen]);
 
   useEffect(() => {
     if (!activeAsset) {
@@ -2238,6 +2305,32 @@ function App() {
     setIsGiphyModalOpen(false);
   }
 
+  function startWalkthrough() {
+    setIsExportModalOpen(false);
+    setIsIconModalOpen(false);
+    setIsGiphyModalOpen(false);
+    setIsMediaBinCollapsed(false);
+    setIsEffectsPanelCollapsed(false);
+    setIsTimelineCollapsed(false);
+    setWalkthroughStepIndex(0);
+  }
+
+  function closeWalkthrough() {
+    setWalkthroughStepIndex(null);
+  }
+
+  function previousWalkthroughStep() {
+    setWalkthroughStepIndex((index) => (index === null ? null : Math.max(0, index - 1)));
+  }
+
+  function nextWalkthroughStep() {
+    setWalkthroughStepIndex((index) => {
+      if (index === null) return null;
+      const next = index + 1;
+      return next >= walkthroughSteps.length ? null : next;
+    });
+  }
+
   function closeExportModal() {
     if (exportProgress !== null) return;
     setIsExportModalOpen(false);
@@ -2352,6 +2445,21 @@ function App() {
 
   const canEdit = activeAsset !== null;
   const effectScopeLabel = effectScope === "project" ? "project" : effectScope === "frame" ? "frame" : "whole GIF";
+  const walkthroughPadding = 8;
+  const walkthroughHighlightStyle: CSSProperties | undefined = walkthroughRect
+    ? {
+      top: Math.max(8, walkthroughRect.top - walkthroughPadding),
+      left: Math.max(8, walkthroughRect.left - walkthroughPadding),
+      width: Math.min(window.innerWidth - 16, walkthroughRect.width + walkthroughPadding * 2),
+      height: Math.min(window.innerHeight - 16, walkthroughRect.height + walkthroughPadding * 2),
+    }
+    : undefined;
+  const walkthroughCardStyle: CSSProperties | undefined = walkthroughRect
+    ? {
+      top: Math.max(16, Math.min(Math.max(16, window.innerHeight - 228), walkthroughRect.bottom + 16)),
+      left: Math.max(16, Math.min(Math.max(16, window.innerWidth - 376), walkthroughRect.left)),
+    }
+    : undefined;
 
   const renderAssetCard = (asset: ProjectAsset) => (
     <div
@@ -2454,13 +2562,14 @@ function App() {
       onDrop={handleDrop}
     >
       {isDragging && <div className="drop-overlay">Drop GIF to load</div>}
-      <header className="topbar">
+      <header className="topbar" data-tour="topbar">
         <div className="brand-block">
           <img className="brand-logo" src={logoSrc} alt="Open GIF Studio" />
           <span>Open GIF Studio</span>
         </div>
         <div className="toolbar">
           <div className="command-group">
+            <button className="button quiet icon-only-button help-button" type="button" aria-label="Start app walkthrough" title="Walkthrough" onClick={startWalkthrough}>?</button>
             <label className="button quiet">
               Load
               <input ref={projectInputRef} type="file" accept={`${supportedImageAccept},application/json,.json,.ogsp.json`} onChange={handleProjectImport} />
@@ -2492,7 +2601,7 @@ function App() {
       </header>
 
       <section className={workspaceClassName}>
-        <aside className={isMediaBinCollapsed ? "panel media-bin collapsed" : "panel media-bin"}>
+        <aside className={isMediaBinCollapsed ? "panel media-bin collapsed" : "panel media-bin"} data-tour="media-bin">
           <div className="panel-head">
             <h2>Media Bin</h2>
             <div className="panel-head-actions">
@@ -2540,7 +2649,7 @@ function App() {
             </>}
         </aside>
 
-        <section className="monitor-stage">
+        <section className="monitor-stage" data-tour="preview">
           <div className="monitor-head">
             <div className="monitor-status-wrap">
               <span>{status}</span>
@@ -2585,7 +2694,7 @@ function App() {
                   </div>
                 ) : null}
               </div>
-              <div className="transport">
+              <div className="transport" data-tour="transport">
                 <button className="button icon-only-button" type="button" aria-label="Go to first frame" title="First frame" disabled={!canEdit} onClick={() => setCurrentFrame(0)}><Icon name="first" /></button>
                 <button className="button primary icon-only-button" type="button" aria-label={isPlaying ? "Pause playback" : "Play preview"} title={isPlaying ? "Pause" : "Play"} disabled={!canEdit} onClick={() => setIsPlaying((value) => !value)}><Icon name={isPlaying ? "pause" : "play"} /></button>
                 <button
@@ -2614,7 +2723,7 @@ function App() {
             </>
         </section>
 
-        <aside className={isEffectsPanelCollapsed ? "panel inspector collapsed" : "panel inspector"}>
+        <aside className={isEffectsPanelCollapsed ? "panel inspector collapsed" : "panel inspector"} data-tour="effects">
           <div className="panel-head sticky">
             <h2>Effects</h2>
             <button className="mini-button panel-collapse-button" type="button" aria-label={isEffectsPanelCollapsed ? "Open effects panel" : "Collapse effects panel"} title={isEffectsPanelCollapsed ? "Open effects panel" : "Collapse effects panel"} onClick={() => setIsEffectsPanelCollapsed((value) => !value)}>
@@ -2886,7 +2995,7 @@ function App() {
         </aside>
       </section>
 
-      <section className={isTimelineCollapsed ? "timeline collapsed" : "timeline"}>
+      <section className={isTimelineCollapsed ? "timeline collapsed" : "timeline"} data-tour="timeline">
         <div className="timeline-head">
           <strong>Timeline</strong>
           <div className="viewer-controls">
@@ -2929,12 +3038,34 @@ function App() {
           </>}
       </section>
 
-      <footer className="project-status-bar">
+      <footer className="project-status-bar" data-tour="status">
         <span>{status}</span>
         <strong>{project ? `${project.name} · ${visibleAssetCount}/${project.assets.length} visible GIFs` : "No project loaded"}</strong>
         <span>{activeAsset ? `${rangeLabel(activeAsset, editor)} · ${outputSize ? `${outputSize.width} x ${outputSize.height}` : "-"}` : "Waiting for media"}</span>
         <span>{importProgress ? `Importing ${importProgress.currentFileName} · ${Math.round((importProgressValue ?? 0) * 100)}%` : projectWideEffectsCount === 0 ? "No project-wide effects" : `${projectWideEffectsCount} project-wide effect${projectWideEffectsCount === 1 ? "" : "s"}`}</span>
       </footer>
+
+      {walkthroughStep && (
+        <div className="walkthrough-layer" role="dialog" aria-modal="true" aria-labelledby="walkthrough-title">
+          <div className="walkthrough-scrim" />
+          {walkthroughHighlightStyle && <div className="walkthrough-highlight" style={walkthroughHighlightStyle} />}
+          <section className="walkthrough-card" style={walkthroughCardStyle}>
+            <span className="walkthrough-kicker">Step {walkthroughStepIndex! + 1} of {walkthroughSteps.length}</span>
+            <h2 id="walkthrough-title">{walkthroughStep.title}</h2>
+            <p>{walkthroughStep.body}</p>
+            <div className="walkthrough-progress" aria-hidden="true">
+              {walkthroughSteps.map((step, index) => (
+                <span className={index === walkthroughStepIndex ? "active" : ""} key={step.target} />
+              ))}
+            </div>
+            <div className="walkthrough-actions">
+              <button className="button quiet" type="button" onClick={closeWalkthrough}>Close</button>
+              <button className="button" type="button" disabled={walkthroughStepIndex === 0} onClick={previousWalkthroughStep}>Back</button>
+              <button className="button primary" type="button" onClick={nextWalkthroughStep}>{walkthroughStepIndex === walkthroughSteps.length - 1 ? "Finish" : "Next"}</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {isExportModalOpen && (
         <div className="modal-backdrop" onClick={closeExportModal}>

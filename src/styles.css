@@ -302,6 +302,12 @@ h2 {
   color: var(--muted);
 }
 
+.help-button {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+}
+
 .button.download {
   text-decoration: none;
 }
@@ -1258,6 +1264,84 @@ input[type="range"] {
   padding: 18px;
   background: color-mix(in srgb, var(--bg) 78%, transparent);
   backdrop-filter: blur(6px);
+}
+
+.walkthrough-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  pointer-events: auto;
+}
+
+.walkthrough-scrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg) 74%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.walkthrough-highlight {
+  position: fixed;
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 9999px color-mix(in srgb, var(--bg) 54%, transparent),
+    0 0 28px color-mix(in srgb, var(--accent) 58%, transparent);
+  pointer-events: none;
+}
+
+.walkthrough-card {
+  position: fixed;
+  width: min(360px, calc(100vw - 32px));
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--surface), var(--panel));
+  box-shadow: 0 22px 70px color-mix(in srgb, var(--black) 58%, transparent);
+  padding: 16px;
+}
+
+.walkthrough-kicker {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.walkthrough-card h2 {
+  margin-top: 8px;
+  font-size: 1rem;
+}
+
+.walkthrough-card p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.walkthrough-progress {
+  display: flex;
+  gap: 5px;
+  margin-top: 14px;
+}
+
+.walkthrough-progress span {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line-strong);
+}
+
+.walkthrough-progress span.active {
+  background: var(--accent);
+}
+
+.walkthrough-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .modal {
