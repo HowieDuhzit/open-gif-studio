@@ -1276,8 +1276,7 @@ input[type="range"] {
 .walkthrough-scrim {
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--bg) 74%, transparent);
-  backdrop-filter: blur(3px);
+  background: color-mix(in srgb, var(--bg) 34%, transparent);
 }
 
 .walkthrough-highlight {
@@ -1285,7 +1284,7 @@ input[type="range"] {
   border: 2px solid var(--accent);
   border-radius: 10px;
   box-shadow:
-    0 0 0 9999px color-mix(in srgb, var(--bg) 54%, transparent),
+    0 0 0 9999px color-mix(in srgb, var(--bg) 26%, transparent),
     0 0 28px color-mix(in srgb, var(--accent) 58%, transparent);
   pointer-events: none;
 }
@@ -1293,6 +1292,8 @@ input[type="range"] {
 .walkthrough-card {
   position: fixed;
   width: min(360px, calc(100vw - 32px));
+  max-height: min(216px, calc(100vh - 32px));
+  overflow: auto;
   border: 1px solid var(--line-strong);
   border-radius: 14px;
   background: linear-gradient(180deg, var(--surface), var(--panel));
@@ -1339,9 +1340,14 @@ input[type="range"] {
 
 .walkthrough-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 14px;
+}
+
+.walkthrough-actions .button {
+  min-width: 74px;
 }
 
 .modal {

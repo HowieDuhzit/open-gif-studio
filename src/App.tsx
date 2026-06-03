@@ -2454,9 +2454,17 @@ function App() {
       height: Math.min(window.innerHeight - 16, walkthroughRect.height + walkthroughPadding * 2),
     }
     : undefined;
+  const walkthroughCardHeight = 216;
+  const walkthroughCardTop = walkthroughRect
+    ? walkthroughRect.bottom + 16 + walkthroughCardHeight <= window.innerHeight - 16
+      ? walkthroughRect.bottom + 16
+      : walkthroughRect.top - 16 - walkthroughCardHeight >= 16
+        ? walkthroughRect.top - 16 - walkthroughCardHeight
+        : Math.max(16, window.innerHeight - walkthroughCardHeight - 16)
+    : 16;
   const walkthroughCardStyle: CSSProperties | undefined = walkthroughRect
     ? {
-      top: Math.max(16, Math.min(Math.max(16, window.innerHeight - 228), walkthroughRect.bottom + 16)),
+      top: walkthroughCardTop,
       left: Math.max(16, Math.min(Math.max(16, window.innerWidth - 376), walkthroughRect.left)),
     }
     : undefined;
