@@ -500,6 +500,14 @@ h2 {
   overflow: hidden;
 }
 
+.media-giphy-button {
+  min-width: 58px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+}
+
 .panel-head {
   min-height: 32px;
   border-bottom: 1px solid var(--line);
@@ -1338,6 +1346,14 @@ input[type="range"] {
   margin-top: 14px;
 }
 
+.giphy-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
 .icon-browser-summary {
   display: flex;
   align-items: center;
@@ -1802,7 +1818,8 @@ input[type="range"] {
   }
 
   .preset-row,
-  .icon-search-row {
+  .icon-search-row,
+  .giphy-search-row {
     grid-template-columns: 1fr;
   }
 

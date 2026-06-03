@@ -114,6 +114,30 @@ type GiphyUploadResult = {
   url: string | null;
 };
 
+type GiphyGif = {
+  id: string;
+  title: string;
+  slug: string;
+  url: string;
+  images: {
+    fixed_width?: { url?: string; width?: string; height?: string };
+    preview_gif?: { url?: string; width?: string; height?: string };
+    downsized?: { url?: string; width?: string; height?: string };
+    original?: { url?: string; width?: string; height?: string };
+  };
+};
+
+type GiphyPagination = {
+  offset: number;
+  total_count: number;
+  count: number;
+};
+
+type GiphySearchResponse = {
+  data: GiphyGif[];
+  pagination: GiphyPagination;
+};
+
 type WorkerDecodedFrame = {
   index: number;
   delay: number;
@@ -167,6 +191,8 @@ const maxProjectFileBytes = 50 * 1024 * 1024;
 const maxGifFrames = 512;
 const maxGifDimension = 4096;
 const maxGifPixels = 16_000_000;
+const giphyPageSize = 24;
+const initialGiphyPagination: GiphyPagination = { offset: 0, total_count: 0, count: 0 };
 const initialMagnificPagination: MagnificPagination = { current_page: 1, per_page: 24, last_page: 1, total: 0 };
 const magnificStyleNames: Record<MagnificIconStyleFilter, string | null> = {
   all: null,
@@ -1340,6 +1366,13 @@ function App() {
   const [isUploadingToGiphy, setIsUploadingToGiphy] = useState(false);
   const [giphyTags, setGiphyTags] = useState("");
   const [giphyUploadResult, setGiphyUploadResult] = useState<GiphyUploadResult | null>(null);
+  const [isGiphyModalOpen, setIsGiphyModalOpen] = useState(false);
+  const [giphySearchTerm, setGiphySearchTerm] = useState("");
+  const [giphyResults, setGiphyResults] = useState<GiphyGif[]>([]);
+  const [giphyPagination, setGiphyPagination] = useState<GiphyPagination>(initialGiphyPagination);
+  const [giphyLoading, setGiphyLoading] = useState(false);
+  const [giphyError, setGiphyError] = useState("");
+  const [giphyImportingId, setGiphyImportingId] = useState<string | null>(null);
   const [isBeforePreview, setIsBeforePreview] = useState(false);
   const [isIconModalOpen, setIsIconModalOpen] = useState(false);
   const [exportSettings, setExportSettings] = useState<ExportSettings>(defaultExportSettings);
@@ -1400,7 +1433,7 @@ function App() {
   const canSavePreset = activeEffects.length > 0;
   const exportBaseName = safeFileBase(exportSettings.fileName, defaultExportSettings.fileName);
   const exportStats = useMemo(() => getExportStats(activeAsset, editor, outputSize), [activeAsset, editor, outputSize]);
-  const isAnyModalOpen = isExportModalOpen || isIconModalOpen;
+  const isAnyModalOpen = isExportModalOpen || isIconModalOpen || isGiphyModalOpen;
   const isDragDropEnabled = !isAnyModalOpen;
   const visibleAssetCount = project?.assets.filter((asset) => !asset.hidden).length ?? 0;
   const projectWideEffectsCount = projectEffects.length;
@@ -1952,6 +1985,61 @@ function App() {
     }
   }
 
+  async function loadGiphyGifs(offset = 0, append = false) {
+    const params = new URLSearchParams({
+      limit: String(giphyPageSize),
+      offset: String(offset),
+    });
+    if (giphySearchTerm.trim()) params.set("q", giphySearchTerm.trim());
+
+    setGiphyLoading(true);
+    setGiphyError("");
+
+    try {
+      const response = await fetch(`/api/giphy/search?${params.toString()}`);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(payload?.message || "Failed to load GIFs from GIPHY.");
+
+      const result = payload as GiphySearchResponse;
+      setGiphyResults((current) => (append ? [...current, ...result.data] : result.data));
+      setGiphyPagination(result.pagination ?? initialGiphyPagination);
+    } catch (error) {
+      setGiphyError(error instanceof Error ? error.message : "Failed to load GIFs from GIPHY.");
+    } finally {
+      setGiphyLoading(false);
+    }
+  }
+
+  async function importGiphyGif(gif: GiphyGif) {
+    setGiphyImportingId(gif.id);
+    setGiphyError("");
+    setStatus(`Adding ${gif.title || "GIPHY GIF"} from GIPHY...`);
+
+    try {
+      const assetResponse = await fetch(`/api/giphy/gifs/${encodeURIComponent(gif.id)}/download`);
+      if (!assetResponse.ok) {
+        const payload = await assetResponse.json().catch(() => null);
+        throw new Error(payload?.message || `Failed to download ${gif.title || "GIPHY GIF"}.`);
+      }
+
+      const blob = await assetResponse.blob();
+      const fileHeader = assetResponse.headers.get("content-disposition") || "";
+      const matchedName = fileHeader.match(/filename="([^"]+)"/i)?.[1];
+      const safeName = matchedName || `${gif.slug || gif.id}.gif`;
+      const fileName = safeName.toLowerCase().endsWith(".gif") ? safeName : `${safeName}.gif`;
+      const file = new File([blob], fileName, { type: blob.type || "image/gif" });
+
+      await appendMediaFiles([file]);
+      setIsGiphyModalOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : `Failed to add ${gif.title || "GIPHY GIF"}.`;
+      setGiphyError(message);
+      setStatus(message);
+    } finally {
+      setGiphyImportingId(null);
+    }
+  }
+
   async function handleProjectImport(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -2132,9 +2220,22 @@ function App() {
     setIsIconModalOpen(true);
   }
 
+  function openGiphyModal() {
+    setGiphyResults([]);
+    setGiphyPagination(initialGiphyPagination);
+    setGiphyError("");
+    setIsGiphyModalOpen(true);
+    void loadGiphyGifs(0, false);
+  }
+
   function closeIconModal() {
     if (iconImportingId !== null) return;
     setIsIconModalOpen(false);
+  }
+
+  function closeGiphyModal() {
+    if (giphyImportingId !== null) return;
+    setIsGiphyModalOpen(false);
   }
 
   function closeExportModal() {
@@ -2396,6 +2497,7 @@ function App() {
             <h2>Media Bin</h2>
             <div className="panel-head-actions">
               {!isMediaBinCollapsed && <label className="mini-button icon-only-button media-add-button" aria-label="Add media" title="Add media"><Icon name="plus" /><input type="file" accept={supportedImageAccept} multiple onChange={handleImport} /></label>}
+              {!isMediaBinCollapsed && <button className="mini-button media-giphy-button" type="button" aria-label="Open GIPHY browser" title="GIPHY" onClick={openGiphyModal}>GIPHY</button>}
               {!isMediaBinCollapsed && <button className="mini-button icon-only-button" type="button" aria-label="Open animated icons" title="Animated Icons" onClick={openIconModal}><Icon name="sparkles" /></button>}
               <button className="mini-button panel-collapse-button" type="button" aria-label={isMediaBinCollapsed ? "Open media bin" : "Collapse media bin"} title={isMediaBinCollapsed ? "Open media bin" : "Collapse media bin"} onClick={() => setIsMediaBinCollapsed((value) => !value)}>
                 {isMediaBinCollapsed ? "›" : "‹"}
@@ -3017,6 +3119,77 @@ function App() {
             <div className="modal-actions">
               <button className="button" type="button" disabled={iconLoading || iconImportingId !== null || iconPagination.current_page >= iconPagination.last_page} onClick={() => void loadMagnificIcons(iconPagination.current_page + 1, true)}>
                 {iconLoading && iconPagination.current_page > 1 ? "Loading..." : "Load more"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {isGiphyModalOpen && (
+        <div className="modal-backdrop" onClick={closeGiphyModal}>
+          <section className="modal icon-browser-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h2>GIPHY Browser</h2>
+                <p className="modal-copy">Search GIPHY, then add a GIF directly into the media bin.</p>
+              </div>
+              <button className="mini-button icon-only-button" type="button" aria-label="Close GIPHY browser" title="Close" onClick={closeGiphyModal} disabled={giphyImportingId !== null}><Icon name="close" /></button>
+            </div>
+
+            <form className="giphy-search-row" onSubmit={(event) => {
+              event.preventDefault();
+              void loadGiphyGifs(0, false);
+            }}>
+              <label>
+                Search
+                <input type="text" value={giphySearchTerm} placeholder="reaction, dancing, loader..." onChange={(event) => setGiphySearchTerm(event.target.value)} />
+              </label>
+              <button className="button primary" type="submit" disabled={giphyLoading || giphyImportingId !== null}>
+                {giphyLoading ? "Searching..." : "Search"}
+              </button>
+            </form>
+
+            <div className="icon-browser-summary">
+              <span>
+                {giphyResults.length > 0
+                  ? `${giphyResults.length} shown of ${giphyPagination.total_count || giphyResults.length} GIFs`
+                  : giphySearchTerm.trim()
+                    ? "Search GIPHY for GIFs"
+                    : "Trending GIFs"}
+              </span>
+              <strong>{giphySearchTerm.trim() ? "GIPHY search" : "GIPHY trending"}</strong>
+            </div>
+
+            {giphyError && <div className="icon-browser-error">{giphyError}</div>}
+
+            <div className="icon-results-grid">
+              {!giphyLoading && giphyResults.length === 0 && !giphyError && (
+                <div className="icon-results-empty">No GIFs matched this search.</div>
+              )}
+              {giphyResults.map((gif) => {
+                const thumbnail = gif.images.fixed_width?.url || gif.images.preview_gif?.url || gif.images.downsized?.url || gif.images.original?.url;
+                const isImporting = giphyImportingId === gif.id;
+                const title = gif.title || "GIPHY GIF";
+                return (
+                  <article className="icon-card" key={gif.id}>
+                    <div className="icon-card-thumb">
+                      {thumbnail ? <img src={thumbnail} alt={title} loading="lazy" /> : <div className="icon-card-fallback">No preview</div>}
+                    </div>
+                    <div className="icon-card-body">
+                      <strong title={title}>{title}</strong>
+                      <small>GIPHY · {gif.id}</small>
+                    </div>
+                    <button className="button icon-import-button" type="button" disabled={giphyLoading || giphyImportingId !== null} onClick={() => void importGiphyGif(gif)}>
+                      {isImporting ? "Adding..." : "Add to project"}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+
+            <div className="modal-actions">
+              <button className="button" type="button" disabled={giphyLoading || giphyImportingId !== null || giphyResults.length >= giphyPagination.total_count} onClick={() => void loadGiphyGifs(giphyPagination.offset + giphyPagination.count, true)}>
+                {giphyLoading && giphyResults.length > 0 ? "Loading..." : "Load more"}
               </button>
             </div>
           </section>

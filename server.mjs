@@ -47,6 +47,11 @@ function matchMagnificDownload(pathname) {
   return match ? { id: match[1] } : null;
 }
 
+function matchGiphyDownload(pathname) {
+  const match = pathname.match(/^\/api\/giphy\/gifs\/([^/]+)\/download$/);
+  return match ? { id: decodeURIComponent(match[1]) } : null;
+}
+
 function isPrivateHostname(hostname) {
   const normalized = hostname.toLowerCase();
   if (normalized === "localhost" || normalized.endsWith(".localhost")) return true;
@@ -63,6 +68,20 @@ function validateAssetUrl(value) {
   return url;
 }
 
+function validateGiphyAssetUrl(value) {
+  const url = new URL(value);
+  const hostname = url.hostname.toLowerCase();
+  const isGiphyMedia = hostname === "i.giphy.com" || /^media\d*\.giphy\.com$/.test(hostname);
+  if (url.protocol !== "https:" || !isGiphyMedia) throw new Error("GIPHY asset URL must use HTTPS media.giphy.com.");
+  if (isPrivateHostname(hostname)) throw new Error("GIPHY asset URL resolved to a blocked host.");
+  return url;
+}
+
+function sanitizeFileName(value, fallback) {
+  const cleaned = String(value || "").replace(/["\\/<>:|?*]/g, "").trim();
+  return cleaned || fallback;
+}
+
 async function fetchWithTimeout(url, init = {}) {
   const signal = AbortSignal.timeout(upstreamTimeoutMs);
   return await fetch(url, { ...init, signal });
@@ -70,10 +89,10 @@ async function fetchWithTimeout(url, init = {}) {
 
 async function readResponseWithLimit(response, limitBytes) {
   const length = Number(response.headers.get("content-length") || 0);
-  if (length > limitBytes) throw new Error("Magnific asset is too large.");
+  if (length > limitBytes) throw new Error("Asset is too large.");
 
   const buffer = Buffer.from(await response.arrayBuffer());
-  if (buffer.byteLength > limitBytes) throw new Error("Magnific asset is too large.");
+  if (buffer.byteLength > limitBytes) throw new Error("Asset is too large.");
   return buffer;
 }
 
@@ -86,8 +105,8 @@ async function readFormData(request) {
   return await webRequest.formData();
 }
 
-async function handleGiphyUpload(request, response) {
-  if (request.url !== "/api/giphy/upload" || request.method !== "POST") return false;
+async function handleGiphyProxy(request, requestUrl, response) {
+  if (!requestUrl.pathname.startsWith("/api/giphy/")) return false;
 
   if (!giphyApiKey) {
     sendJson(response, 500, { message: "Missing GIPHY_API_KEY in the server environment." });
@@ -95,6 +114,72 @@ async function handleGiphyUpload(request, response) {
   }
 
   try {
+    if (requestUrl.pathname === "/api/giphy/search" && request.method === "GET") {
+      const limit = Math.max(1, Math.min(48, Number(requestUrl.searchParams.get("limit") || 24)));
+      const offset = Math.max(0, Number(requestUrl.searchParams.get("offset") || 0));
+      const query = requestUrl.searchParams.get("q")?.trim() ?? "";
+      const upstreamParams = new URLSearchParams({
+        api_key: giphyApiKey,
+        limit: String(limit),
+        offset: String(offset),
+        rating: "pg-13",
+        lang: "en",
+      });
+      if (query) upstreamParams.set("q", query);
+
+      const endpoint = query ? "search" : "trending";
+      const upstream = await fetchWithTimeout(`https://api.giphy.com/v1/gifs/${endpoint}?${upstreamParams.toString()}`);
+      const text = await upstream.text();
+      response.statusCode = upstream.status;
+      response.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json; charset=utf-8");
+      response.end(text);
+      return true;
+    }
+
+    const downloadMatch = matchGiphyDownload(requestUrl.pathname);
+    if (downloadMatch && request.method === "GET") {
+      const upstream = await fetchWithTimeout(`https://api.giphy.com/v1/gifs/${encodeURIComponent(downloadMatch.id)}?api_key=${encodeURIComponent(giphyApiKey)}`);
+      const lookupText = await upstream.text();
+      if (!upstream.ok) {
+        response.statusCode = upstream.status;
+        response.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json; charset=utf-8");
+        response.end(lookupText);
+        return true;
+      }
+
+      const payload = JSON.parse(lookupText);
+      const assetUrl = payload?.data?.images?.downsized?.url || payload?.data?.images?.original?.url;
+      if (!assetUrl) {
+        sendJson(response, 502, { message: "GIPHY response did not include a downloadable GIF URL." });
+        return true;
+      }
+
+      const assetResponse = await fetchWithTimeout(validateGiphyAssetUrl(assetUrl));
+      if (!assetResponse.ok) {
+        sendJson(response, 502, { message: "Failed to fetch the GIPHY GIF asset." });
+        return true;
+      }
+
+      const contentType = assetResponse.headers.get("content-type") || "image/gif";
+      if (!contentType.startsWith("image/")) {
+        sendJson(response, 502, { message: "GIPHY asset response was not an image." });
+        return true;
+      }
+
+      const bytes = await readResponseWithLimit(assetResponse, maxAssetBytes);
+      const fileName = sanitizeFileName(payload?.data?.slug || payload?.data?.title, `giphy-${downloadMatch.id}`);
+      response.statusCode = 200;
+      response.setHeader("Content-Type", contentType);
+      response.setHeader("Content-Disposition", `inline; filename="${fileName}.gif"`);
+      response.end(bytes);
+      return true;
+    }
+
+    if (requestUrl.pathname !== "/api/giphy/upload" || request.method !== "POST") {
+      sendJson(response, 404, { message: "Not found" });
+      return true;
+    }
+
     const formData = await readFormData(request);
     const file = formData.get("file");
     if (!(file instanceof File)) {
@@ -120,7 +205,7 @@ async function handleGiphyUpload(request, response) {
     response.end(text);
     return true;
   } catch (error) {
-    sendJson(response, 500, { message: error instanceof Error ? error.message : "GIPHY upload failed." });
+    sendJson(response, 500, { message: error instanceof Error ? error.message : "GIPHY proxy failed." });
     return true;
   }
 }
@@ -236,7 +321,7 @@ async function serveStatic(requestUrl, response) {
 createServer(async (request, response) => {
   setSecurityHeaders(response);
   const requestUrl = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
-  if (await handleGiphyUpload(request, response)) return;
+  if (await handleGiphyProxy(request, requestUrl, response)) return;
   if (await handleMagnificProxy(requestUrl, response)) return;
   await serveStatic(requestUrl, response);
 }).listen(port, "0.0.0.0", () => {

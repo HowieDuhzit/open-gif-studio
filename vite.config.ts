@@ -13,6 +13,25 @@ function readRouteParams(url: string) {
   return match ? { id: match[1] } : null;
 }
 
+function readGiphyRouteParams(url: string) {
+  const match = url.match(/^\/api\/giphy\/gifs\/([^/]+)\/download(?:\?|$)/);
+  return match ? { id: decodeURIComponent(match[1]) } : null;
+}
+
+function validateGiphyAssetUrl(value: string) {
+  const url = new URL(value);
+  const hostname = url.hostname.toLowerCase();
+  if (url.protocol !== "https:" || !(hostname === "i.giphy.com" || /^media\d*\.giphy\.com$/.test(hostname))) {
+    throw new Error("GIPHY asset URL must use HTTPS media.giphy.com.");
+  }
+  return url;
+}
+
+function sanitizeFileName(value: unknown, fallback: string) {
+  const cleaned = String(value || "").replace(/["\\/<>:|?*]/g, "").trim();
+  return cleaned || fallback;
+}
+
 function magnificProxyPlugin(apiKey: string): Plugin {
   async function handle(request: IncomingMessage, response: ServerResponse) {
     const requestUrl = request.url ?? "";
@@ -116,7 +135,8 @@ async function readFormData(request: IncomingMessage) {
 
 function giphyProxyPlugin(apiKey: string): Plugin {
   async function handle(request: IncomingMessage, response: ServerResponse) {
-    if (request.url !== "/api/giphy/upload" || request.method !== "POST") return false;
+    const requestUrl = new URL(request.url ?? "/", "http://localhost");
+    if (!requestUrl.pathname.startsWith("/api/giphy/")) return false;
 
     if (!apiKey) {
       sendJson(response, 500, { message: "Missing GIPHY_API_KEY in the server environment." });
@@ -124,6 +144,67 @@ function giphyProxyPlugin(apiKey: string): Plugin {
     }
 
     try {
+      if (requestUrl.pathname === "/api/giphy/search" && request.method === "GET") {
+        const limit = Math.max(1, Math.min(48, Number(requestUrl.searchParams.get("limit") || 24)));
+        const offset = Math.max(0, Number(requestUrl.searchParams.get("offset") || 0));
+        const query = requestUrl.searchParams.get("q")?.trim() ?? "";
+        const upstreamParams = new URLSearchParams({
+          api_key: apiKey,
+          limit: String(limit),
+          offset: String(offset),
+          rating: "pg-13",
+          lang: "en",
+        });
+        if (query) upstreamParams.set("q", query);
+
+        const endpoint = query ? "search" : "trending";
+        const upstream = await fetch(`https://api.giphy.com/v1/gifs/${endpoint}?${upstreamParams.toString()}`);
+        const text = await upstream.text();
+        response.statusCode = upstream.status;
+        response.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json");
+        response.end(text);
+        return true;
+      }
+
+      const giphyParams = readGiphyRouteParams(request.url ?? "");
+      if (giphyParams && request.method === "GET") {
+        const upstream = await fetch(`https://api.giphy.com/v1/gifs/${encodeURIComponent(giphyParams.id)}?api_key=${encodeURIComponent(apiKey)}`);
+        const lookupText = await upstream.text();
+        if (!upstream.ok) {
+          response.statusCode = upstream.status;
+          response.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json");
+          response.end(lookupText);
+          return true;
+        }
+
+        const payload = JSON.parse(lookupText) as { data?: { slug?: string; title?: string; images?: { original?: { url?: string }; downsized?: { url?: string } } } };
+        const assetUrl = payload.data?.images?.downsized?.url || payload.data?.images?.original?.url;
+        if (!assetUrl) {
+          sendJson(response, 502, { message: "GIPHY response did not include a downloadable GIF URL." });
+          return true;
+        }
+
+        const assetResponse = await fetch(validateGiphyAssetUrl(assetUrl));
+        if (!assetResponse.ok) {
+          sendJson(response, 502, { message: "Failed to fetch the GIPHY GIF asset." });
+          return true;
+        }
+
+        const contentType = assetResponse.headers.get("content-type") || "image/gif";
+        const bytes = Buffer.from(await assetResponse.arrayBuffer());
+        response.statusCode = 200;
+        response.setHeader("Content-Type", contentType);
+        const fileName = sanitizeFileName(payload.data?.slug || payload.data?.title, `giphy-${giphyParams.id}`);
+        response.setHeader("Content-Disposition", `inline; filename="${fileName}.gif"`);
+        response.end(bytes);
+        return true;
+      }
+
+      if (requestUrl.pathname !== "/api/giphy/upload" || request.method !== "POST") {
+        sendJson(response, 404, { message: "Not found" });
+        return true;
+      }
+
       const formData = await readFormData(request);
       const file = formData.get("file");
       if (!file || typeof file === "string" || !("size" in file)) {
@@ -150,7 +231,7 @@ function giphyProxyPlugin(apiKey: string): Plugin {
       response.end(text);
       return true;
     } catch (error) {
-      sendJson(response, 500, { message: error instanceof Error ? error.message : "GIPHY upload failed." });
+      sendJson(response, 500, { message: error instanceof Error ? error.message : "GIPHY proxy failed." });
       return true;
     }
   }

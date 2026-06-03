@@ -333,3 +333,10 @@ PNG logo correction:
 - [x] Use the provided `/home/howie/Downloads/OGSLOGO.png` bitmap directly as `public/logo.png`.
 - [x] Point the header brand and favicon to `/logo.png?v=20260603-original` instead of converting the logo to SVG.
 - [x] Use the same PNG logo in `public/og-card.svg` and regenerate `public/og-card.png`.
+
+## GIPHY Browser Plan
+
+- [x] Add a top media-bin button for opening a GIPHY browser.
+- [x] Add server-side GIPHY search and GIF download proxy routes so the API key remains server-side.
+- [x] Reuse the existing media import/decode path for selected GIPHY GIFs.
+- [x] Mirror the GIPHY proxy routes in Vite dev/preview.
