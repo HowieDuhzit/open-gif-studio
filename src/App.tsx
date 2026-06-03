@@ -148,6 +148,7 @@ type MagnificIconsResponse = {
 
 const repoUrl = "https://github.com/HowieDuhzit/open-gif-studio";
 const donationUrl = "https://buymeacoffee.com/howieduhzit";
+const logoSrc = "/logo.svg?v=20260603-detailed";
 
 const initialEditor: EditorState = {
   effects: [],
@@ -2354,7 +2355,7 @@ function App() {
       {isDragging && <div className="drop-overlay">Drop GIF to load</div>}
       <header className="topbar">
         <div className="brand-block">
-          <img className="brand-logo" src="/logo.svg" alt="Open GIF Studio" />
+          <img className="brand-logo" src={logoSrc} alt="Open GIF Studio" />
           <span>Open GIF Studio</span>
         </div>
         <div className="toolbar">

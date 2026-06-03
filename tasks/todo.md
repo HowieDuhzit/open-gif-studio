@@ -321,3 +321,9 @@ Overlay effects results:
 - [x] Add OGS logo asset based on the provided mark.
 - [x] Use the logo in the app header brand area.
 - [x] Use the logo as the SVG favicon.
+
+Logo visibility follow-up:
+
+- [x] Replaced the rough text-based SVG with a more detailed path-based vector logo.
+- [x] Added cache-busting query strings to the favicon and header logo references so the changed `/logo.svg` is not hidden by browser/CDN cache.
+- [x] Increased the header logo from 42px to 52px so the new vector detail is more visible in the app chrome.

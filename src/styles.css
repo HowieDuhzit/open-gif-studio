@@ -140,8 +140,8 @@ h1 {
 
 .brand-logo {
   display: block;
-  width: 42px;
-  height: 42px;
+  width: 52px;
+  height: 52px;
   object-fit: contain;
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.42));
 }
