@@ -2454,7 +2454,7 @@ function App() {
       height: Math.min(window.innerHeight - 16, walkthroughRect.height + walkthroughPadding * 2),
     }
     : undefined;
-  const walkthroughCardHeight = 216;
+  const walkthroughCardHeight = 256;
   const walkthroughCardTop = walkthroughRect
     ? walkthroughRect.bottom + 16 + walkthroughCardHeight <= window.innerHeight - 16
       ? walkthroughRect.bottom + 16

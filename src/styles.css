@@ -1292,8 +1292,6 @@ input[type="range"] {
 .walkthrough-card {
   position: fixed;
   width: min(360px, calc(100vw - 32px));
-  max-height: min(216px, calc(100vh - 32px));
-  overflow: auto;
   border: 1px solid var(--line-strong);
   border-radius: 14px;
   background: linear-gradient(180deg, var(--surface), var(--panel));

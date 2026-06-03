@@ -353,3 +353,4 @@ Walkthrough help plan:
 - [x] Add a step-by-step app walkthrough covering the top bar, media bin, preview, playback, effects, timeline, and status bar.
 - [x] Highlight each explained region using measured target rectangles so the tour follows the actual responsive layout.
 - [x] Reduce walkthrough dimming/blur and constrain the tour card so controls remain visible at shorter viewport heights.
+- [x] Remove internal walkthrough card scrolling and adjust no-scroll card placement.
