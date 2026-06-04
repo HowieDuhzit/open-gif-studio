@@ -179,6 +179,22 @@ Use a classic video editor visual language without copying a specific product:
 
 Browser-only MVP implementation started and verified with `npm run build`.
 
+## App-First Marketing Activation Plan
+
+- [x] Keep Open GIF Studio as a single-page app while improving first-run activation.
+- [x] Add built-in example deep links such as `/?example=caption`, `/?example=overlay`, `/?example=giphy`, `/?example=transparent`, and `/?example=promo`.
+- [x] Add a stronger empty state with import, GIPHY, walkthrough, demo video, and try-example calls to action.
+- [x] Add an about/capabilities modal with crawlable product copy without splitting the app into separate pages.
+- [x] Add copyable share/example links for marketing posts and user onboarding.
+- [x] Verify with `npm run build` and a production browser smoke test.
+
+Review:
+
+- Added app-first marketing activation without creating separate SEO pages.
+- Added a local fallback walkthrough MP4 at `public/open-gif-studio-walkthrough-1m04.mp4`; replace it with the richer Remotion render when available.
+- Embedded the walkthrough MP4 in the empty app state with the social card as poster art.
+- Verified all five example deep links load with editable canvases/effect stacks, the About modal shows five share cards, the embedded demo video is present, and the MP4 serves with HTTP 200.
+
 ## Completion Sprint Plan
 
 - [x] Add non-destructive frame duplicate/delete controls using a stable frame order in editor state.
@@ -358,3 +374,8 @@ Walkthrough help plan:
 Mouseover help text follow-up:
 
 - [x] Add native hover help titles to primary buttons, media controls, preview controls, timeline controls, effect controls, export settings, and GIF/icon browser actions.
+
+X/Twitter social card follow-up:
+
+- [x] Point canonical, Open Graph URL, and X/Twitter URL metadata at `https://opengif.studio/` instead of GitHub.
+- [x] Point Open Graph and X/Twitter image metadata at the deployed same-origin card image with a cache-busting query string.

@@ -145,6 +145,15 @@ type WalkthroughStep = {
   body: string;
 };
 
+type ExampleSlug = "caption" | "overlay" | "giphy" | "transparent" | "promo";
+
+type ExampleDefinition = {
+  slug: ExampleSlug;
+  label: string;
+  title: string;
+  description: string;
+};
+
 type WorkerDecodedFrame = {
   index: number;
   delay: number;
@@ -180,6 +189,8 @@ type MagnificIconsResponse = {
 const repoUrl = "https://github.com/HowieDuhzit/open-gif-studio";
 const donationUrl = "https://buymeacoffee.com/howieduhzit";
 const logoSrc = "/logo.png?v=20260603-original";
+const sampleImageSrc = "/og-card.png?v=20260603-xcard";
+const walkthroughVideoSrc = "/open-gif-studio-walkthrough-1m04.mp4";
 
 const initialEditor: EditorState = {
   effects: [],
@@ -209,6 +220,13 @@ const walkthroughSteps: WalkthroughStep[] = [
   { target: "effects", title: "Effects inspector", body: "Effects are applied here. Choose whether an effect targets the whole project, the selected GIF, or one frame; then stack, reorder, save presets, and tune each effect's controls." },
   { target: "timeline", title: "Timeline", body: "Scrub through the animation here. Click a thumbnail to jump to that frame and switch the inspector into frame-specific editing." },
   { target: "status", title: "Status bar", body: "The bottom bar reports import, export, project, size, timing, and effect status. If something is decoding, exporting, or blocked, check this area first." },
+];
+const exampleDefinitions: ExampleDefinition[] = [
+  { slug: "caption", label: "Caption GIF", title: "Caption-ready sample", description: "Loads a sample image with bold text overlay settings so creators can see the caption workflow immediately." },
+  { slug: "overlay", label: "Image Overlay", title: "Overlay sample", description: "Loads the same image with the OGS logo layered as an editable image overlay." },
+  { slug: "giphy", label: "GIPHY Flow", title: "GIPHY-style sample", description: "Opens a project tuned for reaction GIF edits and prompts users to search GIPHY next." },
+  { slug: "transparent", label: "Transparent Look", title: "Transparent-background sample", description: "Shows the canvas/background controls and simple background-removal path." },
+  { slug: "promo", label: "Promo GIF", title: "Launch promo sample", description: "Loads a social promo setup with color grading, vignette, and export-ready naming." },
 ];
 const magnificStyleNames: Record<MagnificIconStyleFilter, string | null> = {
   all: null,
@@ -554,6 +572,61 @@ function createEffect(kind: EffectKind): Effect {
   if (kind === "text-overlay") return { id, kind, enabled: true, text: "OPEN GIF STUDIO", x: 50, y: 82, size: 36, color: "#f5f5dc", strokeColor: "#101318", strokeWidth: 3, opacity: 100, rotate: 0, align: "center", font: "IBM Plex Sans", weight: "900" };
   if (kind === "image-overlay") return { id, kind, enabled: true, imageDataUrl: "", imageName: "No image selected", x: 50, y: 50, scale: 40, opacity: 100, rotate: 0 };
   return { id, kind, enabled: true, color: "#00ff00", tolerance: 22, softness: 10 };
+}
+
+function effectId(slug: string, kind: EffectKind) {
+  return `${slug}-${kind}-${crypto.randomUUID()}`;
+}
+
+function createExampleEffects(slug: ExampleSlug): Effect[] {
+  const canvasStyle: CanvasStyleEffect = {
+    id: effectId(slug, "canvas-style"),
+    kind: "canvas-style",
+    enabled: true,
+    backgroundColor: "#191919",
+    transparentBackground: slug === "transparent",
+    cornerRadius: slug === "promo" ? 28 : 0,
+    borderWidth: slug === "promo" ? 8 : 0,
+    borderColor: "#ea701d",
+  };
+
+  if (slug === "caption") {
+    return [
+      canvasStyle,
+      { id: effectId(slug, "text-overlay"), kind: "text-overlay", enabled: true, text: "ADD YOUR CAPTION HERE", x: 50, y: 84, size: 58, color: "#f5f5dc", strokeColor: "#191919", strokeWidth: 7, opacity: 100, rotate: 0, align: "center", font: "IBM Plex Sans", weight: "900" },
+    ];
+  }
+
+  if (slug === "overlay") {
+    return [
+      canvasStyle,
+      { id: effectId(slug, "image-overlay"), kind: "image-overlay", enabled: true, imageDataUrl: logoSrc, imageName: "OGS logo", x: 83, y: 24, scale: 22, opacity: 94, rotate: -8 },
+      { id: effectId(slug, "text-overlay"), kind: "text-overlay", enabled: true, text: "LAYER IMAGES + TEXT", x: 50, y: 86, size: 44, color: "#f5f5dc", strokeColor: "#191919", strokeWidth: 5, opacity: 100, rotate: 0, align: "center", font: "IBM Plex Sans", weight: "900" },
+    ];
+  }
+
+  if (slug === "giphy") {
+    return [
+      canvasStyle,
+      { id: effectId(slug, "preset"), kind: "preset", enabled: true, preset: "toaster" },
+      { id: effectId(slug, "text-overlay"), kind: "text-overlay", enabled: true, text: "SEARCH GIPHY, THEN REMIX", x: 50, y: 86, size: 42, color: "#f5f5dc", strokeColor: "#191919", strokeWidth: 5, opacity: 100, rotate: 0, align: "center", font: "IBM Plex Sans", weight: "900" },
+    ];
+  }
+
+  if (slug === "transparent") {
+    return [
+      canvasStyle,
+      { id: effectId(slug, "background-removal"), kind: "background-removal", enabled: true, color: "#191919", tolerance: 8, softness: 16 },
+      { id: effectId(slug, "text-overlay"), kind: "text-overlay", enabled: true, text: "TRANSPARENT CANVAS", x: 50, y: 84, size: 46, color: "#ea701d", strokeColor: "#191919", strokeWidth: 4, opacity: 100, rotate: 0, align: "center", font: "IBM Plex Sans", weight: "900" },
+    ];
+  }
+
+  return [
+    canvasStyle,
+    { id: effectId(slug, "preset"), kind: "preset", enabled: true, preset: "gotham" },
+    { id: effectId(slug, "vignette"), kind: "vignette", enabled: true, amount: 38 },
+    { id: effectId(slug, "text-overlay"), kind: "text-overlay", enabled: true, text: "SHIP A LAUNCH GIF", x: 50, y: 85, size: 52, color: "#f5f5dc", strokeColor: "#191919", strokeWidth: 6, opacity: 100, rotate: 0, align: "center", font: "IBM Plex Sans", weight: "900" },
+  ];
 }
 
 function effectName(effect: Effect) {
@@ -1383,6 +1456,7 @@ function App() {
   const [giphyTags, setGiphyTags] = useState("");
   const [giphyUploadResult, setGiphyUploadResult] = useState<GiphyUploadResult | null>(null);
   const [isGiphyModalOpen, setIsGiphyModalOpen] = useState(false);
+  const [isAboutModalOpen, setIsAboutModalOpen] = useState(false);
   const [giphySearchTerm, setGiphySearchTerm] = useState("");
   const [giphyResults, setGiphyResults] = useState<GiphyGif[]>([]);
   const [giphyPagination, setGiphyPagination] = useState<GiphyPagination>(initialGiphyPagination);
@@ -1453,7 +1527,7 @@ function App() {
   const exportStats = useMemo(() => getExportStats(activeAsset, editor, outputSize), [activeAsset, editor, outputSize]);
   const isWalkthroughOpen = walkthroughStepIndex !== null;
   const walkthroughStep = walkthroughStepIndex !== null ? walkthroughSteps[walkthroughStepIndex] : null;
-  const isAnyModalOpen = isExportModalOpen || isIconModalOpen || isGiphyModalOpen || isWalkthroughOpen;
+  const isAnyModalOpen = isExportModalOpen || isIconModalOpen || isGiphyModalOpen || isAboutModalOpen || isWalkthroughOpen;
   const isDragDropEnabled = !isAnyModalOpen;
   const visibleAssetCount = project?.assets.filter((asset) => !asset.hidden).length ?? 0;
   const projectWideEffectsCount = projectEffects.length;
@@ -1562,6 +1636,15 @@ function App() {
     } catch {
       setSavedPresets({});
     }
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const example = params.get("example") as ExampleSlug | null;
+    if (example && exampleDefinitions.some((item) => item.slug === example)) {
+      void loadExampleProject(example, false);
+    }
+    if (params.get("about") === "1") setIsAboutModalOpen(true);
   }, []);
 
   useEffect(() => {
@@ -2295,6 +2378,59 @@ function App() {
     void loadGiphyGifs(0, false);
   }
 
+  async function loadExampleProject(slug: ExampleSlug, updateUrl = true) {
+    const example = exampleDefinitions.find((item) => item.slug === slug) ?? exampleDefinitions[0];
+    setStatus(`Loading ${example.title}...`);
+    setIsPlaying(false);
+    setDownloadUrl(null);
+    setExportFileSize(null);
+
+    try {
+      const response = await fetch(sampleImageSrc);
+      if (!response.ok) throw new Error("Failed to load the built-in example image.");
+      const blob = await response.blob();
+      const file = new File([blob], `${example.slug}-example.png`, { type: blob.type || "image/png" });
+      const sourceDataUrl = await fileToDataUrl(file);
+      const buffer = await file.arrayBuffer();
+      const asset = await decodeImageAsset(file.name, buffer, sourceDataUrl, inferImageMimeType(file.name, file.type));
+      const editorState: EditorState = { effects: createExampleEffects(slug), frameEffects: {} };
+
+      setProject({
+        name: `Open GIF Studio - ${example.title}`,
+        activeAssetId: asset.id,
+        assets: [asset],
+        projectEffects: [],
+        editors: { [asset.id]: editorState },
+      });
+      setCurrentFrame(0);
+      setEffectScope("global");
+      setStatus(`${example.title} loaded. Adjust the effects or replace the media with your own.`);
+      setIsAboutModalOpen(false);
+      if (slug === "giphy") setIsGiphyModalOpen(false);
+      if (updateUrl) window.history.replaceState(null, "", `/?example=${slug}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to load example project.");
+    }
+  }
+
+  async function copyExampleLink(slug: ExampleSlug) {
+    const url = `${window.location.origin}/?example=${slug}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setStatus(`Copied example link: ${url}`);
+    } catch {
+      setStatus(url);
+    }
+  }
+
+  function openAboutModal() {
+    setIsAboutModalOpen(true);
+  }
+
+  function closeAboutModal() {
+    setIsAboutModalOpen(false);
+  }
+
   function closeIconModal() {
     if (iconImportingId !== null) return;
     setIsIconModalOpen(false);
@@ -2309,6 +2445,7 @@ function App() {
     setIsExportModalOpen(false);
     setIsIconModalOpen(false);
     setIsGiphyModalOpen(false);
+    setIsAboutModalOpen(false);
     setIsMediaBinCollapsed(false);
     setIsEffectsPanelCollapsed(false);
     setIsTimelineCollapsed(false);
@@ -2592,6 +2729,7 @@ function App() {
             <button className="button quiet icon-only-button" type="button" aria-label="Reset edits" title="Reset" disabled={!canEdit} onClick={resetEdits}><Icon name="reset" /></button>
           </div>
           <div className="command-group utility-links">
+            <button className="button quiet" type="button" title="See what Open GIF Studio can do" onClick={openAboutModal}>About</button>
             <button className="button export" type="button" title="Open export settings and render the active GIF" disabled={!canEdit} onClick={openExportModal}>
               Export
             </button>
@@ -2652,11 +2790,21 @@ function App() {
                   </div>
                 </>
               ) : (
-                <label className="drop-copy" title="Click to choose files, or drag media into the app">
-                  <strong>No source loaded</strong>
-                  <span>Import or drop GIF, APNG, WebP, AVIF, PNG, or JPEG files to build a project.</span>
-                  <input type="file" accept={supportedImageAccept} multiple onChange={handleImport} />
-                </label>
+                <div className="media-start-panel">
+                  <label className="drop-copy" title="Click to choose files, or drag media into the app">
+                    <strong>No source loaded</strong>
+                    <span>Import or drop GIF, APNG, WebP, AVIF, PNG, or JPEG files to build a project.</span>
+                    <input type="file" accept={supportedImageAccept} multiple onChange={handleImport} />
+                  </label>
+                  <div className="example-link-list" aria-label="Try an example project">
+                    {exampleDefinitions.map((example) => (
+                      <button className="example-link" type="button" key={example.slug} title={example.description} onClick={() => void loadExampleProject(example.slug)}>
+                        <strong>{example.label}</strong>
+                        <span>{example.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             </>}
         </aside>
@@ -2705,7 +2853,34 @@ function App() {
                       style={viewerOutputSize ? { width: `${viewerOutputSize.width * fitScale * viewerZoom}px`, height: `${viewerOutputSize.height * fitScale * viewerZoom}px` } : undefined}
                     />
                   </div>
-                ) : null}
+                ) : (
+                  <section className="app-empty-hero" aria-label="Open GIF Studio introduction">
+                    <div className="hero-copy">
+                      <span className="hero-kicker">Free browser GIF editor</span>
+                      <h1>Edit GIFs, images, and short animations without leaving the browser.</h1>
+                      <p>Add captions, layer images, apply effects, import from GIPHY, preview frame-by-frame, and export directly from one focused workspace.</p>
+                      <div className="hero-actions">
+                        <button className="button primary" type="button" title="Choose a local GIF, image, or project file" onClick={() => projectInputRef.current?.click()}>Start Editing</button>
+                        <button className="button" type="button" title="Load a built-in example project" onClick={() => void loadExampleProject("caption")}>Try Example</button>
+                        <button className="button quiet" type="button" title="Search GIPHY and import a GIF" onClick={openGiphyModal}>Search GIPHY</button>
+                        <a className="button quiet" href={walkthroughVideoSrc} target="_blank" rel="noreferrer" title="Watch the Open GIF Studio walkthrough video">Watch Demo</a>
+                      </div>
+                    </div>
+                    <div className="hero-example-card">
+                      <video src={walkthroughVideoSrc} poster={sampleImageSrc} muted loop playsInline controls aria-label="Open GIF Studio walkthrough preview" />
+                      <div className="hero-example-caption">
+                        <strong>Demo preview</strong>
+                        <span>1:04 walkthrough</span>
+                      </div>
+                    </div>
+                    <div className="hero-feature-grid">
+                      <span>GIF/APNG/WebP/AVIF/JPEG</span>
+                      <span>Text and image overlays</span>
+                      <span>Frame timeline preview</span>
+                      <span>GIF and ZIP export</span>
+                    </div>
+                  </section>
+                )}
               </div>
               <div className="transport" data-tour="transport">
                 <button className="button icon-only-button" type="button" aria-label="Go to first frame" title="First frame" disabled={!canEdit} onClick={() => setCurrentFrame(0)}><Icon name="first" /></button>
@@ -3079,6 +3254,61 @@ function App() {
               <button className="button quiet" type="button" title="Close the walkthrough" onClick={closeWalkthrough}>Close</button>
               <button className="button" type="button" title="Go back to the previous walkthrough step" disabled={walkthroughStepIndex === 0} onClick={previousWalkthroughStep}>Back</button>
               <button className="button primary" type="button" title={walkthroughStepIndex === walkthroughSteps.length - 1 ? "Finish the walkthrough" : "Go to the next walkthrough step"} onClick={nextWalkthroughStep}>{walkthroughStepIndex === walkthroughSteps.length - 1 ? "Finish" : "Next"}</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {isAboutModalOpen && (
+        <div className="modal-backdrop" onClick={closeAboutModal}>
+          <section className="modal about-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h2>What Open GIF Studio can do</h2>
+                <p className="modal-copy">A single-page, browser-native GIF editor for fast captioning, overlays, effects, previewing, and export.</p>
+              </div>
+              <button className="mini-button icon-only-button" type="button" aria-label="Close about modal" title="Close" onClick={closeAboutModal}><Icon name="close" /></button>
+            </div>
+
+            <div className="about-hero">
+              <img src={logoSrc} alt="" />
+              <div>
+                <strong>Edit GIFs without the ad-heavy upload-tool feeling.</strong>
+                <p>Load local media or GIPHY results, add text and image overlays, tune effects, compare before/after, scrub the timeline, and export from the same workspace.</p>
+              </div>
+            </div>
+
+            <div className="capability-grid">
+              <article><strong>Import</strong><span>GIF, APNG/PNG, WebP, AVIF, JPEG, saved OGS projects, GIPHY GIFs, and animated icons.</span></article>
+              <article><strong>Edit</strong><span>Captions, image overlays, transform, crop, resize, timing, canvas styling, presets, and color controls.</span></article>
+              <article><strong>Effects</strong><span>Background keying, color replacement, blur, vignette, noise, posterize, solarize, emboss, oil paint, and distortion.</span></article>
+              <article><strong>Export</strong><span>Render the active GIF, batch export visible assets as a ZIP, upload to GIPHY, or save/load project files.</span></article>
+            </div>
+
+            <div className="about-examples">
+              <div className="about-section-head">
+                <strong>Shareable examples</strong>
+                <span>Use these links in posts, demos, and launch announcements.</span>
+              </div>
+              <div className="example-share-grid">
+                {exampleDefinitions.map((example) => (
+                  <article className="example-share-card" key={example.slug}>
+                    <div>
+                      <strong>{example.title}</strong>
+                      <span>{example.description}</span>
+                    </div>
+                    <div className="split-buttons">
+                      <button className="mini-button" type="button" title="Open this example project" onClick={() => void loadExampleProject(example.slug)}>Open</button>
+                      <button className="mini-button" type="button" title="Copy this example link" onClick={() => void copyExampleLink(example.slug)}>Copy link</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button className="button primary" type="button" title="Load the default caption example" onClick={() => void loadExampleProject("caption")}>Try caption example</button>
+              <a className="button quiet" href={walkthroughVideoSrc} target="_blank" rel="noreferrer" title="Watch the walkthrough MP4">Watch demo</a>
             </div>
           </section>
         </div>
