@@ -2,6 +2,10 @@ import { IncomingMessage, ServerResponse } from "node:http";
 import { defineConfig, loadEnv, Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
+const maxAssetBytes = 25 * 1024 * 1024;
+const maxGiphyUploadBytes = 100 * 1024 * 1024;
+const upstreamTimeoutMs = 15000;
+
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
   response.statusCode = status;
   response.setHeader("Content-Type", "application/json");
@@ -18,18 +22,49 @@ function readGiphyRouteParams(url: string) {
   return match ? { id: decodeURIComponent(match[1]) } : null;
 }
 
+function isPrivateHostname(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  if (normalized === "localhost" || normalized.endsWith(".localhost")) return true;
+  if (/^127\./.test(normalized) || /^10\./.test(normalized) || /^192\.168\./.test(normalized)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(normalized)) return true;
+  if (normalized === "0.0.0.0" || normalized === "::1" || normalized.startsWith("169.254.")) return true;
+  return false;
+}
+
+function validateMagnificAssetUrl(value: string) {
+  const url = new URL(value);
+  if (url.protocol !== "https:") throw new Error("Magnific asset URL must use HTTPS.");
+  if (isPrivateHostname(url.hostname)) throw new Error("Magnific asset URL resolved to a blocked host.");
+  return url;
+}
+
 function validateGiphyAssetUrl(value: string) {
   const url = new URL(value);
   const hostname = url.hostname.toLowerCase();
   if (url.protocol !== "https:" || !(hostname === "i.giphy.com" || /^media\d*\.giphy\.com$/.test(hostname))) {
     throw new Error("GIPHY asset URL must use HTTPS media.giphy.com.");
   }
+  if (isPrivateHostname(hostname)) throw new Error("GIPHY asset URL resolved to a blocked host.");
   return url;
 }
 
 function sanitizeFileName(value: unknown, fallback: string) {
   const cleaned = String(value || "").replace(/["\\/<>:|?*]/g, "").trim();
   return cleaned || fallback;
+}
+
+async function fetchWithTimeout(url: string | URL, init: RequestInit = {}) {
+  const signal = AbortSignal.timeout(upstreamTimeoutMs);
+  return await fetch(url, { ...init, signal });
+}
+
+async function readResponseWithLimit(response: Response, limitBytes: number) {
+  const length = Number(response.headers.get("content-length") || 0);
+  if (length > limitBytes) throw new Error("Asset is too large.");
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.byteLength > limitBytes) throw new Error("Asset is too large.");
+  return buffer;
 }
 
 function magnificProxyPlugin(apiKey: string): Plugin {
@@ -45,7 +80,7 @@ function magnificProxyPlugin(apiKey: string): Plugin {
     try {
       if (requestUrl.startsWith("/api/magnific/icons?") || requestUrl === "/api/magnific/icons") {
         const upstreamUrl = new URL(`https://api.magnific.com/v1/icons${new URL(requestUrl, "http://localhost").search}`);
-        const upstream = await fetch(upstreamUrl, {
+        const upstream = await fetchWithTimeout(upstreamUrl, {
           headers: {
             "x-magnific-api-key": apiKey,
             "Accept-Language": "en-US",
@@ -65,7 +100,7 @@ function magnificProxyPlugin(apiKey: string): Plugin {
       }
 
       const routeUrl = new URL(requestUrl, "http://localhost");
-      const upstream = await fetch(`https://api.magnific.com/v1/icons/${params.id}/download?${routeUrl.searchParams.toString()}`, {
+      const upstream = await fetchWithTimeout(`https://api.magnific.com/v1/icons/${params.id}/download?${routeUrl.searchParams.toString()}`, {
         headers: {
           "x-magnific-api-key": apiKey,
           "Accept-Language": "en-US",
@@ -86,17 +121,23 @@ function magnificProxyPlugin(apiKey: string): Plugin {
         return true;
       }
 
-      const assetResponse = await fetch(assetUrl);
+      const assetResponse = await fetchWithTimeout(validateMagnificAssetUrl(assetUrl));
       if (!assetResponse.ok) {
         sendJson(response, 502, { message: "Failed to fetch the downloaded icon asset." });
         return true;
       }
 
-      const bytes = Buffer.from(await assetResponse.arrayBuffer());
+      const contentType = assetResponse.headers.get("content-type") || "image/gif";
+      if (!contentType.startsWith("image/")) {
+        sendJson(response, 502, { message: "Magnific asset response was not an image." });
+        return true;
+      }
+
+      const bytes = await readResponseWithLimit(assetResponse, maxAssetBytes);
       response.statusCode = 200;
-      response.setHeader("Content-Type", assetResponse.headers.get("content-type") || "image/gif");
+      response.setHeader("Content-Type", contentType);
       const fileName = downloadPayload.data?.filename || `magnific-icon-${params.id}.gif`;
-      response.setHeader("Content-Disposition", `inline; filename="${fileName}"`);
+      response.setHeader("Content-Disposition", `inline; filename="${String(fileName).replace(/["\\]/g, "")}"`);
       response.end(bytes);
       return true;
     } catch (error) {
@@ -158,7 +199,7 @@ function giphyProxyPlugin(apiKey: string): Plugin {
         if (query) upstreamParams.set("q", query);
 
         const endpoint = query ? "search" : "trending";
-        const upstream = await fetch(`https://api.giphy.com/v1/gifs/${endpoint}?${upstreamParams.toString()}`);
+        const upstream = await fetchWithTimeout(`https://api.giphy.com/v1/gifs/${endpoint}?${upstreamParams.toString()}`);
         const text = await upstream.text();
         response.statusCode = upstream.status;
         response.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json");
@@ -168,7 +209,7 @@ function giphyProxyPlugin(apiKey: string): Plugin {
 
       const giphyParams = readGiphyRouteParams(request.url ?? "");
       if (giphyParams && request.method === "GET") {
-        const upstream = await fetch(`https://api.giphy.com/v1/gifs/${encodeURIComponent(giphyParams.id)}?api_key=${encodeURIComponent(apiKey)}`);
+        const upstream = await fetchWithTimeout(`https://api.giphy.com/v1/gifs/${encodeURIComponent(giphyParams.id)}?api_key=${encodeURIComponent(apiKey)}`);
         const lookupText = await upstream.text();
         if (!upstream.ok) {
           response.statusCode = upstream.status;
@@ -184,14 +225,19 @@ function giphyProxyPlugin(apiKey: string): Plugin {
           return true;
         }
 
-        const assetResponse = await fetch(validateGiphyAssetUrl(assetUrl));
+        const assetResponse = await fetchWithTimeout(validateGiphyAssetUrl(assetUrl));
         if (!assetResponse.ok) {
           sendJson(response, 502, { message: "Failed to fetch the GIPHY GIF asset." });
           return true;
         }
 
         const contentType = assetResponse.headers.get("content-type") || "image/gif";
-        const bytes = Buffer.from(await assetResponse.arrayBuffer());
+        if (!contentType.startsWith("image/")) {
+          sendJson(response, 502, { message: "GIPHY asset response was not an image." });
+          return true;
+        }
+
+        const bytes = await readResponseWithLimit(assetResponse, maxAssetBytes);
         response.statusCode = 200;
         response.setHeader("Content-Type", contentType);
         const fileName = sanitizeFileName(payload.data?.slug || payload.data?.title, `giphy-${giphyParams.id}`);
@@ -212,7 +258,7 @@ function giphyProxyPlugin(apiKey: string): Plugin {
         return true;
       }
 
-      if (file.size > 100 * 1024 * 1024) {
+      if (file.size > maxGiphyUploadBytes) {
         sendJson(response, 400, { message: "GIF exceeds GIPHY's 100MB upload limit." });
         return true;
       }
@@ -224,7 +270,7 @@ function giphyProxyPlugin(apiKey: string): Plugin {
       const tags = formData.get("tags");
       if (typeof tags === "string" && tags.trim()) upstreamForm.set("tags", tags.trim());
 
-      const upstream = await fetch("https://upload.giphy.com/v1/gifs", { method: "POST", body: upstreamForm });
+      const upstream = await fetchWithTimeout("https://upload.giphy.com/v1/gifs", { method: "POST", body: upstreamForm });
       const text = await upstream.text();
       response.statusCode = upstream.status;
       response.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json");

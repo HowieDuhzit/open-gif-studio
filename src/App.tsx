@@ -337,6 +337,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const effectKinds: EffectKind[] = ["timing", "transform", "canvas-style", "preset", "adjust", "tint", "color-replace", "blur", "vignette", "noise", "background-removal", "posterize", "solarize", "emboss", "oil-paint", "distortion", "text-overlay", "image-overlay"];
+const nonVisualEffectKinds = new Set<EffectKind>(["timing", "transform", "canvas-style"]);
 const presetKinds: Preset[] = ["grayscale", "sepia", "monochrome", "invert", "gotham", "lomo", "toaster", "polaroid", "nashville"];
 const distortionKinds: DistortionEffect["mode"][] = ["wave", "swirl", "implode"];
 const textAlignKinds: TextOverlayEffect["align"][] = ["left", "center", "right"];
@@ -447,6 +448,10 @@ function uniqueGifFileName(name: string, usedNames: Set<string>) {
 
 function projectScopedEffects(asset: ProjectAsset, effects: Effect[]) {
   return asset.ignoreProjectEffects ? [] : effects;
+}
+
+function isVisualEffect(effect: Effect) {
+  return effect.enabled && !nonVisualEffectKinds.has(effect.kind);
 }
 
 function ColorField({
@@ -939,6 +944,9 @@ function drawImageOverlay(ctx: CanvasRenderingContext2D, effect: ImageOverlayEff
 }
 
 function applyEffectStack(imageData: ImageData, effects: Effect[]) {
+  const activeEffects = effects.filter(isVisualEffect);
+  if (activeEffects.length === 0) return imageData;
+
   const canvas = document.createElement("canvas");
   const scratch = document.createElement("canvas");
   canvas.width = imageData.width;
@@ -950,7 +958,7 @@ function applyEffectStack(imageData: ImageData, effects: Effect[]) {
   if (!ctx || !scratchCtx) return imageData;
   ctx.putImageData(imageData, 0, 0);
 
-  effects.filter((effect) => effect.enabled).forEach((effect) => {
+  activeEffects.forEach((effect) => {
     if (effect.kind === "emboss") {
       ctx.putImageData(applyEmbossEffect(ctx.getImageData(0, 0, canvas.width, canvas.height), effect.strength), 0, 0);
       return;
@@ -1052,7 +1060,9 @@ function renderFrame(target: HTMLCanvasElement, frame: SourceFrame, project: Pro
   const source = document.createElement("canvas");
   source.width = project.width;
   source.height = project.height;
-  source.getContext("2d")?.putImageData(applyEffectStack(frame.imageData, effects.filter((effect) => !["timing", "transform", "canvas-style"].includes(effect.kind))), 0, 0);
+  const sourceCtx = source.getContext("2d");
+  if (!sourceCtx) return;
+  sourceCtx.putImageData(applyEffectStack(frame.imageData, effects), 0, 0);
 
   const { width, height } = getOutputSize(project, editor);
   target.width = width;
@@ -1105,30 +1115,27 @@ function renderFrameThumbnail(frame: SourceFrame, project: ProjectAsset, editor:
   const rendered = document.createElement("canvas");
   renderFrame(rendered, frame, project, editor, projectEffects);
 
-  const thumb = document.createElement("canvas");
-  thumb.width = 96;
-  thumb.height = 72;
-  const ctx = thumb.getContext("2d");
-  if (!ctx) return frame.thumbnail;
-
-  const scale = Math.min(thumb.width / rendered.width, thumb.height / rendered.height);
-  const width = rendered.width * scale;
-  const height = rendered.height * scale;
-  ctx.drawImage(rendered, (thumb.width - width) / 2, (thumb.height - height) / 2, width, height);
-  return thumb.toDataURL("image/png");
+  return canvasThumbnail(rendered, 96, 72, frame.thumbnail);
 }
 
-function canvasThumbnail(source: HTMLCanvasElement, width: number, height: number) {
-  const thumb = document.createElement("canvas");
-  thumb.width = width;
-  thumb.height = height;
-  const ctx = thumb.getContext("2d");
-  if (!ctx) return source.toDataURL("image/png");
-
+function drawCanvasToFit(ctx: CanvasRenderingContext2D, source: HTMLCanvasElement, width: number, height: number) {
+  if (source.width <= 0 || source.height <= 0) return;
   const scale = Math.min(width / source.width, height / source.height);
   const drawWidth = source.width * scale;
   const drawHeight = source.height * scale;
   ctx.drawImage(source, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+}
+
+function canvasThumbnail(source: HTMLCanvasElement, width: number, height: number, fallback?: string) {
+  if (source.width <= 0 || source.height <= 0) return fallback ?? "";
+
+  const thumb = document.createElement("canvas");
+  thumb.width = width;
+  thumb.height = height;
+  const ctx = thumb.getContext("2d");
+  if (!ctx) return fallback ?? source.toDataURL("image/png");
+
+  drawCanvasToFit(ctx, source, width, height);
   return thumb.toDataURL("image/png");
 }
 
@@ -1136,17 +1143,7 @@ function renderAssetThumbnail(frame: SourceFrame, project: ProjectAsset, editor:
   const rendered = document.createElement("canvas");
   renderFrame(rendered, frame, project, editor, projectEffects);
 
-  const thumb = document.createElement("canvas");
-  thumb.width = 52;
-  thumb.height = 52;
-  const ctx = thumb.getContext("2d");
-  if (!ctx) return frame.thumbnail;
-
-  const scale = Math.min(thumb.width / rendered.width, thumb.height / rendered.height);
-  const width = rendered.width * scale;
-  const height = rendered.height * scale;
-  ctx.drawImage(rendered, (thumb.width - width) / 2, (thumb.height - height) / 2, width, height);
-  return thumb.toDataURL("image/png");
+  return canvasThumbnail(rendered, 52, 52, frame.thumbnail);
 }
 
 function getPlayableFrames(project: ProjectAsset | null, editor: EditorState) {
@@ -1184,8 +1181,8 @@ function renderGifBlob(
   const timing = getTimingEffect(editor.effects);
   const { width, height } = getOutputSize(asset, editor);
   const gif = new GIF({
-    workers: settings.workers,
-    quality: settings.quality,
+    workers: Math.max(1, Math.min(8, Math.round(settings.workers || defaultExportSettings.workers))),
+    quality: Math.max(1, Math.min(20, Math.round(settings.quality || defaultExportSettings.quality))),
     width,
     height,
     workerScript,
@@ -1248,6 +1245,15 @@ function inferImageMimeType(name: string, mimeType: string) {
 function isSupportedImageFile(file: File) {
   const type = inferImageMimeType(file.name, file.type);
   return ["image/gif", "image/png", "image/webp", "image/avif", "image/jpeg"].includes(type);
+}
+
+async function gifFileFromResponse(response: Response, fallbackName: string) {
+  const blob = await response.blob();
+  const contentDisposition = response.headers.get("content-disposition") || "";
+  const matchedName = contentDisposition.match(/filename="([^"]+)"/i)?.[1];
+  const safeName = matchedName || fallbackName;
+  const fileName = safeName.toLowerCase().endsWith(".gif") ? safeName : `${safeName}.gif`;
+  return new File([blob], fileName, { type: blob.type || "image/gif" });
 }
 
 async function fileToDataUrl(file: File) {
@@ -1333,82 +1339,98 @@ async function decodeAnimatedImageAsset(name: string, buffer: ArrayBuffer, sourc
   if (!("ImageDecoder" in window)) throw new Error(`${name} needs a browser with animated ${mimeType.replace("image/", "").toUpperCase()} decoding support.`);
 
   const decoder = new ImageDecoder({ data: buffer, type: mimeType });
-  await decoder.tracks.ready;
-  const track = decoder.tracks.selectedTrack;
-  const frameCount = track?.frameCount ?? 1;
-  const firstDecoded = await decoder.decode({ frameIndex: 0 });
-  const width = firstDecoded.image.displayWidth;
-  const height = firstDecoded.image.displayHeight;
+  try {
+    await decoder.tracks.ready;
+    const track = decoder.tracks.selectedTrack;
+    const frameCount = track?.frameCount ?? 1;
+    const firstDecoded = await decoder.decode({ frameIndex: 0 });
+    const width = firstDecoded.image.displayWidth;
+    const height = firstDecoded.image.displayHeight;
 
-  if (width <= 0 || height <= 0 || width > maxGifDimension || height > maxGifDimension || width * height > maxGifPixels) {
-    throw new Error(`${name} exceeds the supported image dimensions.`);
-  }
-  if (frameCount > maxGifFrames) throw new Error(`${name} has too many frames to import.`);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas is not available in this browser.");
-
-  const frames: SourceFrame[] = [];
-  for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
-    const decoded = frameIndex === 0 ? firstDecoded : await decoder.decode({ frameIndex });
-    const videoFrame = decoded.image;
-    ctx.clearRect(0, 0, width, height);
-    ctx.drawImage(videoFrame, 0, 0, width, height);
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const durationMs = Math.max(20, Math.round(Number((videoFrame as VideoFrame & { duration?: number }).duration ?? 100000) / 1000));
-    frames.push({
-      index: frameIndex,
-      imageData,
-      delay: durationMs,
-      thumbnail: canvas.toDataURL("image/webp", 0.7),
-    });
-    videoFrame.close();
-
-    if (onProgress && (frameIndex === frameCount - 1 || frameIndex % 4 === 0)) {
-      onProgress((frameIndex + 1) / frameCount);
-      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    if (width <= 0 || height <= 0 || width > maxGifDimension || height > maxGifDimension || width * height > maxGifPixels) {
+      firstDecoded.image.close();
+      throw new Error(`${name} exceeds the supported image dimensions.`);
     }
-  }
+    if (frameCount > maxGifFrames) {
+      firstDecoded.image.close();
+      throw new Error(`${name} has too many frames to import.`);
+    }
 
-  decoder.close();
-  return { id: crypto.randomUUID(), name: normalizeAssetName(name), width, height, frames, sourceDataUrl, hidden: false, ignoreProjectEffects: false };
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      firstDecoded.image.close();
+      throw new Error("Canvas is not available in this browser.");
+    }
+
+    const frames: SourceFrame[] = [];
+    for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+      const decoded = frameIndex === 0 ? firstDecoded : await decoder.decode({ frameIndex });
+      const videoFrame = decoded.image;
+      try {
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(videoFrame, 0, 0, width, height);
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const durationMs = Math.max(20, Math.round(Number((videoFrame as VideoFrame & { duration?: number }).duration ?? 100000) / 1000));
+        frames.push({
+          index: frameIndex,
+          imageData,
+          delay: durationMs,
+          thumbnail: canvas.toDataURL("image/webp", 0.7),
+        });
+      } finally {
+        videoFrame.close();
+      }
+
+      if (onProgress && (frameIndex === frameCount - 1 || frameIndex % 4 === 0)) {
+        onProgress((frameIndex + 1) / frameCount);
+        await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      }
+    }
+
+    return { id: crypto.randomUUID(), name: normalizeAssetName(name), width, height, frames, sourceDataUrl, hidden: false, ignoreProjectEffects: false };
+  } finally {
+    decoder.close();
+  }
 }
 
 async function decodeStaticImageAsset(name: string, buffer: ArrayBuffer, sourceDataUrl: string, mimeType: string): Promise<ProjectAsset> {
   const blob = new Blob([buffer], { type: mimeType });
   const bitmap = await createImageBitmap(blob);
-  const width = bitmap.width;
-  const height = bitmap.height;
+  try {
+    const width = bitmap.width;
+    const height = bitmap.height;
 
-  if (width <= 0 || height <= 0 || width > maxGifDimension || height > maxGifDimension || width * height > maxGifPixels) {
-    throw new Error(`${name} exceeds the supported image dimensions.`);
+    if (width <= 0 || height <= 0 || width > maxGifDimension || height > maxGifDimension || width * height > maxGifPixels) {
+      throw new Error(`${name} exceeds the supported image dimensions.`);
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas is not available in this browser.");
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const thumbnail = canvas.toDataURL("image/webp", 0.7);
+
+    return {
+      id: crypto.randomUUID(),
+      name: normalizeAssetName(name),
+      width,
+      height,
+      frames: [{ index: 0, imageData, delay: 100, thumbnail }],
+      sourceDataUrl,
+      hidden: false,
+      ignoreProjectEffects: false,
+    };
+  } finally {
+    bitmap.close();
   }
-
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas is not available in this browser.");
-
-  ctx.clearRect(0, 0, width, height);
-  ctx.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close();
-  const imageData = ctx.getImageData(0, 0, width, height);
-  const thumbnail = canvas.toDataURL("image/webp", 0.7);
-
-  return {
-    id: crypto.randomUUID(),
-    name: normalizeAssetName(name),
-    width,
-    height,
-    frames: [{ index: 0, imageData, delay: 100, thumbnail }],
-    sourceDataUrl,
-    hidden: false,
-    ignoreProjectEffects: false,
-  };
 }
 
 async function decodeImageAsset(name: string, buffer: ArrayBuffer, sourceDataUrl: string, mimeType: string, onProgress?: (progress: number) => void): Promise<ProjectAsset> {
@@ -1604,6 +1626,21 @@ function App() {
   }, [isWalkthroughOpen]);
 
   useEffect(() => {
+    if (!isAboutModalOpen && !isExportModalOpen && !isIconModalOpen && !isGiphyModalOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (isAboutModalOpen) closeAboutModal();
+      if (isExportModalOpen) closeExportModal();
+      if (isIconModalOpen) closeIconModal();
+      if (isGiphyModalOpen) closeGiphyModal();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [exportProgress, giphyImportingId, iconImportingId, isAboutModalOpen, isExportModalOpen, isGiphyModalOpen, isIconModalOpen]);
+
+  useEffect(() => {
     if (!activeAsset) {
       setIsPlaying(false);
       return;
@@ -1637,6 +1674,12 @@ function App() {
       setSavedPresets({});
     }
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+    };
+  }, [downloadUrl]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2117,12 +2160,7 @@ function App() {
         throw new Error(payload?.message || `Failed to download ${icon.name}.`);
       }
 
-      const blob = await assetResponse.blob();
-      const fileHeader = assetResponse.headers.get("content-disposition") || "";
-      const matchedName = fileHeader.match(/filename="([^"]+)"/i)?.[1];
-      const safeName = matchedName || `${icon.slug || icon.name}.gif`;
-      const fileName = safeName.toLowerCase().endsWith(".gif") ? safeName : `${safeName}.gif`;
-      const file = new File([blob], fileName, { type: blob.type || "image/gif" });
+      const file = await gifFileFromResponse(assetResponse, `${icon.slug || icon.name}.gif`);
 
       await appendMediaFiles([file]);
       setIsIconModalOpen(false);
@@ -2172,12 +2210,7 @@ function App() {
         throw new Error(payload?.message || `Failed to download ${gif.title || "GIPHY GIF"}.`);
       }
 
-      const blob = await assetResponse.blob();
-      const fileHeader = assetResponse.headers.get("content-disposition") || "";
-      const matchedName = fileHeader.match(/filename="([^"]+)"/i)?.[1];
-      const safeName = matchedName || `${gif.slug || gif.id}.gif`;
-      const fileName = safeName.toLowerCase().endsWith(".gif") ? safeName : `${safeName}.gif`;
-      const file = new File([blob], fileName, { type: blob.type || "image/gif" });
+      const file = await gifFileFromResponse(assetResponse, `${gif.slug || gif.id}.gif`);
 
       await appendMediaFiles([file]);
       setIsGiphyModalOpen(false);
@@ -2239,13 +2272,21 @@ function App() {
 
   function saveProjectFile() {
     if (!project) return;
-      const payload: SavedProject = {
-        name: project.name,
-        activeAssetId: project.activeAssetId,
-        assets: project.assets.map((asset) => ({ id: asset.id, name: asset.name, sourceDataUrl: asset.sourceDataUrl, hidden: asset.hidden, ignoreProjectEffects: asset.ignoreProjectEffects })),
-        projectEffects: project.projectEffects,
-        editors: project.editors,
-      };
+
+    const payload: SavedProject = {
+      name: project.name,
+      activeAssetId: project.activeAssetId,
+      assets: project.assets.map((asset) => ({
+        id: asset.id,
+        name: asset.name,
+        sourceDataUrl: asset.sourceDataUrl,
+        hidden: asset.hidden,
+        ignoreProjectEffects: asset.ignoreProjectEffects,
+      })),
+      projectEffects: project.projectEffects,
+      editors: project.editors,
+    };
+
     const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -2506,7 +2547,6 @@ function App() {
     setIsPlaying(false);
     setExportProgress(0);
     setStatus("Rendering GIF export...");
-    if (downloadUrl) URL.revokeObjectURL(downloadUrl);
     setDownloadUrl(null);
     setExportFileSize(null);
 
@@ -2717,10 +2757,10 @@ function App() {
           <span>Open GIF Studio</span>
         </div>
         <div className="toolbar">
-          <div className="command-group">
+          <div className="command-group command-group-main" aria-label="Project commands">
             <button className="button quiet icon-only-button help-button" type="button" aria-label="Start app walkthrough" title="Walkthrough" onClick={startWalkthrough}>?</button>
             <label className="button quiet" title="Load a local GIF, image, or saved Open GIF Studio project">
-              Load
+              Load Media
               <input ref={projectInputRef} type="file" accept={`${supportedImageAccept},application/json,.json,.ogsp.json`} onChange={handleProjectImport} />
             </label>
             <button className="button quiet icon-only-button" type="button" aria-label="Save project" title="Save" disabled={!project} onClick={saveProjectFile}><Icon name="save" /></button>
@@ -2728,10 +2768,10 @@ function App() {
             <button className="button quiet icon-only-button" type="button" aria-label="Redo" title="Redo" disabled={history.future.length === 0} onClick={redo}><Icon name="redo" /></button>
             <button className="button quiet icon-only-button" type="button" aria-label="Reset edits" title="Reset" disabled={!canEdit} onClick={resetEdits}><Icon name="reset" /></button>
           </div>
-          <div className="command-group utility-links">
+          <div className="command-group utility-links" aria-label="Export and app links">
             <button className="button quiet" type="button" title="See what Open GIF Studio can do" onClick={openAboutModal}>About</button>
             <button className="button export" type="button" title="Open export settings and render the active GIF" disabled={!canEdit} onClick={openExportModal}>
-              Export
+              Export GIF
             </button>
             <button className="button export" type="button" title="Export every visible media item into a ZIP file" disabled={!project || project.assets.length === 0 || isBulkExporting} onClick={bulkExportGif}>
               {isBulkExporting ? `Exporting ${Math.round((exportProgress ?? 0) * 100)}%` : "Export All"}
@@ -2753,7 +2793,7 @@ function App() {
       <section className={workspaceClassName}>
         <aside className={isMediaBinCollapsed ? "panel media-bin collapsed" : "panel media-bin"} data-tour="media-bin">
           <div className="panel-head">
-            <h2>Media Bin</h2>
+            <h2>Media</h2>
             <div className="panel-head-actions">
               {!isMediaBinCollapsed && <label className="mini-button icon-only-button media-add-button" aria-label="Add media" title="Add local GIF, APNG, WebP, AVIF, PNG, or JPEG files"><Icon name="plus" /><input type="file" accept={supportedImageAccept} multiple onChange={handleImport} /></label>}
               {!isMediaBinCollapsed && <button className="mini-button media-giphy-button" type="button" aria-label="Open GIPHY browser" title="Search GIPHY and import a GIF into the media bin" onClick={openGiphyModal}>GIPHY</button>}
@@ -2793,7 +2833,7 @@ function App() {
                 <div className="media-start-panel">
                   <label className="drop-copy" title="Click to choose files, or drag media into the app">
                     <strong>No source loaded</strong>
-                    <span>Import or drop GIF, APNG, WebP, AVIF, PNG, or JPEG files to build a project.</span>
+                    <span>Import local animation frames or drop files here to start a project.</span>
                     <input type="file" accept={supportedImageAccept} multiple onChange={handleImport} />
                   </label>
                   <div className="example-link-list" aria-label="Try an example project">
@@ -2812,6 +2852,7 @@ function App() {
         <section className="monitor-stage" data-tour="preview">
           <div className="monitor-head">
             <div className="monitor-status-wrap">
+              <strong>Preview Monitor</strong>
               <span>{status}</span>
               {importProgress && (
                 <div className="progress-strip" aria-label="Import progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(importProgressValue ? importProgressValue * 100 : 0)}>
@@ -2913,7 +2954,7 @@ function App() {
 
         <aside className={isEffectsPanelCollapsed ? "panel inspector collapsed" : "panel inspector"} data-tour="effects">
           <div className="panel-head sticky">
-            <h2>Effects</h2>
+            <h2>Inspector</h2>
             <button className="mini-button panel-collapse-button" type="button" aria-label={isEffectsPanelCollapsed ? "Open effects panel" : "Collapse effects panel"} title={isEffectsPanelCollapsed ? "Open effects panel" : "Collapse effects panel"} onClick={() => setIsEffectsPanelCollapsed((value) => !value)}>
               {isEffectsPanelCollapsed ? "‹" : "›"}
             </button>
@@ -2932,6 +2973,10 @@ function App() {
               </button>
             </div>
             <div className="effect-tools">
+              <div className="tool-section-title">
+                <strong>Add and save effects</strong>
+                <span>{effectScopeLabel}</span>
+              </div>
               <select
                 aria-label="Add effect"
                 title="Choose an effect to add to the selected scope"
@@ -3231,7 +3276,7 @@ function App() {
       </section>
 
       <footer className="project-status-bar" data-tour="status">
-        <span>{status}</span>
+        <span role="status" aria-live="polite">{status}</span>
         <strong>{project ? `${project.name} · ${visibleAssetCount}/${project.assets.length} visible GIFs` : "No project loaded"}</strong>
         <span>{activeAsset ? `${rangeLabel(activeAsset, editor)} · ${outputSize ? `${outputSize.width} x ${outputSize.height}` : "-"}` : "Waiting for media"}</span>
         <span>{importProgress ? `Importing ${importProgress.currentFileName} · ${Math.round((importProgressValue ?? 0) * 100)}%` : projectWideEffectsCount === 0 ? "No project-wide effects" : `${projectWideEffectsCount} project-wide effect${projectWideEffectsCount === 1 ? "" : "s"}`}</span>
@@ -3261,11 +3306,11 @@ function App() {
 
       {isAboutModalOpen && (
         <div className="modal-backdrop" onClick={closeAboutModal}>
-          <section className="modal about-modal" onClick={(event) => event.stopPropagation()}>
+          <section className="modal about-modal" role="dialog" aria-modal="true" aria-labelledby="about-modal-title" aria-describedby="about-modal-copy" onClick={(event) => event.stopPropagation()}>
             <div className="modal-head">
               <div>
-                <h2>What Open GIF Studio can do</h2>
-                <p className="modal-copy">A single-page, browser-native GIF editor for fast captioning, overlays, effects, previewing, and export.</p>
+                <h2 id="about-modal-title">What Open GIF Studio can do</h2>
+                <p className="modal-copy" id="about-modal-copy">A single-page, browser-native GIF editor for fast captioning, overlays, effects, previewing, and export.</p>
               </div>
               <button className="mini-button icon-only-button" type="button" aria-label="Close about modal" title="Close" onClick={closeAboutModal}><Icon name="close" /></button>
             </div>
@@ -3316,67 +3361,75 @@ function App() {
 
       {isExportModalOpen && (
         <div className="modal-backdrop" onClick={closeExportModal}>
-          <section className="modal export-modal" onClick={(event) => event.stopPropagation()}>
+          <section className="modal export-modal" role="dialog" aria-modal="true" aria-labelledby="export-modal-title" aria-describedby="export-modal-copy" onClick={(event) => event.stopPropagation()}>
             <div className="modal-head">
               <div>
-                <h2>Export GIF</h2>
-                <p className="modal-copy">Choose file name, quality, and optimization before rendering.</p>
+                <h2 id="export-modal-title">Export GIF</h2>
+                <p className="modal-copy" id="export-modal-copy">Choose file name, quality, and optimization before rendering.</p>
               </div>
               <button className="mini-button icon-only-button" type="button" aria-label="Close export modal" title="Close" onClick={closeExportModal} disabled={exportProgress !== null}><Icon name="close" /></button>
             </div>
 
-            <div className="export-preview">
-              <div className="export-preview-head">
-                <span>Render preview</span>
-                <strong>{selectedFrame ? `Frame ${selectedFrame.index + 1}` : "No frame"}</strong>
+            <div className="export-layout">
+              <div className="export-preview">
+                <div className="export-preview-head">
+                  <span>Render preview</span>
+                  <strong>{selectedFrame ? `Frame ${selectedFrame.index + 1}` : "No frame"}</strong>
+                </div>
+                <div className="export-preview-stage">
+                  <canvas ref={exportPreviewRef} />
+                </div>
               </div>
-              <div className="export-preview-stage">
-                <canvas ref={exportPreviewRef} />
+
+              <div className="export-settings-column">
+                <div className="modal-grid">
+                  <label>
+                    Save as
+                    <input type="text" title="Base file name for the rendered GIF download" value={exportSettings.fileName} onChange={(event) => setExportSettings((value) => ({ ...value, fileName: event.target.value }))} />
+                  </label>
+                  <label title="Lower numbers usually produce cleaner GIF palettes; higher numbers can render faster/smaller">
+                    Palette quality {exportSettings.quality}
+                    <input type="range" min="1" max="20" value={exportSettings.quality} onChange={(event) => setExportSettings((value) => ({ ...value, quality: Number(event.target.value) }))} />
+                  </label>
+                  <label title="Number of gif.js workers to use during rendering">
+                    Worker count
+                    <input type="number" min="1" max="8" value={exportSettings.workers} onChange={(event) => setExportSettings((value) => ({ ...value, workers: Number(event.target.value) || 1 }))} />
+                  </label>
+                  <label className="check-row" title="Dithering can smooth gradients but may add grain or increase file size">
+                    <input type="checkbox" checked={exportSettings.dither} onChange={(event) => setExportSettings((value) => ({ ...value, dither: event.target.checked }))} />
+                    <span>Enable dithering</span>
+                  </label>
+                  <label className="check-row" title="Use a transparency optimization pass before GIF encoding">
+                    <input type="checkbox" checked={exportSettings.optimizeTransparency} onChange={(event) => setExportSettings((value) => ({ ...value, optimizeTransparency: event.target.checked }))} />
+                    <span>Optimize transparency for smaller GIFs</span>
+                  </label>
+                  <label title="Comma-separated tags to send when uploading the rendered GIF to GIPHY">
+                    GIPHY tags
+                    <input type="text" value={giphyTags} placeholder="reaction, ui, gif" onChange={(event) => setGiphyTags(event.target.value)} />
+                  </label>
+                </div>
+
+                <div className="export-summary">
+                  <span>Output</span>
+                  <strong>{outputSize ? `${outputSize.width} x ${outputSize.height}` : "-"}</strong>
+                  <span>Frames</span>
+                  <strong>{playableFrames.length}</strong>
+                  <span>Duration</span>
+                  <strong>{(exportStats.durationMs / 1000).toFixed(2)}s</strong>
+                  <span>Average FPS</span>
+                  <strong>{exportStats.averageFps.toFixed(1)}</strong>
+                  <span>Loop</span>
+                  <strong>{timing.loopCount === 0 ? "Forever" : `${timing.loopCount}x`}</strong>
+                  <span>Estimated file</span>
+                  <strong>{exportStats.estimatedBytes ? `${(exportStats.estimatedBytes / 1024 / 1024).toFixed(2)} MB` : "-"}</strong>
+                  <span>Rendered file</span>
+                  <strong>{exportFileSize !== null ? `${(exportFileSize / 1024 / 1024).toFixed(2)} MB` : "Not rendered yet"}</strong>
+                </div>
               </div>
             </div>
 
-            <div className="modal-grid">
-              <label>
-                Save as
-                <input type="text" title="Base file name for the rendered GIF download" value={exportSettings.fileName} onChange={(event) => setExportSettings((value) => ({ ...value, fileName: event.target.value }))} />
-              </label>
-              <label title="Lower numbers usually produce cleaner GIF palettes; higher numbers can render faster/smaller">
-                Palette quality {exportSettings.quality}
-                <input type="range" min="1" max="20" value={exportSettings.quality} onChange={(event) => setExportSettings((value) => ({ ...value, quality: Number(event.target.value) }))} />
-              </label>
-              <label title="Number of gif.js workers to use during rendering">
-                Worker count
-                <input type="number" min="1" max="8" value={exportSettings.workers} onChange={(event) => setExportSettings((value) => ({ ...value, workers: Number(event.target.value) || 1 }))} />
-              </label>
-              <label className="check-row" title="Dithering can smooth gradients but may add grain or increase file size">
-                <input type="checkbox" checked={exportSettings.dither} onChange={(event) => setExportSettings((value) => ({ ...value, dither: event.target.checked }))} />
-                <span>Enable dithering</span>
-              </label>
-              <label className="check-row" title="Use a transparency optimization pass before GIF encoding">
-                <input type="checkbox" checked={exportSettings.optimizeTransparency} onChange={(event) => setExportSettings((value) => ({ ...value, optimizeTransparency: event.target.checked }))} />
-                <span>Optimize transparency for smaller GIFs</span>
-              </label>
-              <label title="Comma-separated tags to send when uploading the rendered GIF to GIPHY">
-                GIPHY tags
-                <input type="text" value={giphyTags} placeholder="reaction, ui, gif" onChange={(event) => setGiphyTags(event.target.value)} />
-              </label>
-            </div>
-
-            <div className="export-summary">
-              <span>Output</span>
-              <strong>{outputSize ? `${outputSize.width} x ${outputSize.height}` : "-"}</strong>
-              <span>Frames</span>
-              <strong>{playableFrames.length}</strong>
-              <span>Duration</span>
-              <strong>{(exportStats.durationMs / 1000).toFixed(2)}s</strong>
-              <span>Average FPS</span>
-              <strong>{exportStats.averageFps.toFixed(1)}</strong>
-              <span>Loop</span>
-              <strong>{timing.loopCount === 0 ? "Forever" : `${timing.loopCount}x`}</strong>
-              <span>Estimated file</span>
-              <strong>{exportStats.estimatedBytes ? `${(exportStats.estimatedBytes / 1024 / 1024).toFixed(2)} MB` : "-"}</strong>
-              <span>Rendered file</span>
-              <strong>{exportFileSize !== null ? `${(exportFileSize / 1024 / 1024).toFixed(2)} MB` : "Not rendered yet"}</strong>
+            <div className="modal-feedback" role="status" aria-live="polite">
+              {exportProgress !== null ? `Rendering export ${Math.round(exportProgress * 100)}%. Keep this dialog open until rendering finishes.` : downloadUrl ? "Rendered GIF is ready to download or upload." : "Render when settings look right. Output stays local until you upload it."}
             </div>
 
             {downloadUrl && (
@@ -3420,11 +3473,11 @@ function App() {
 
       {isIconModalOpen && (
         <div className="modal-backdrop" onClick={closeIconModal}>
-          <section className="modal icon-browser-modal" onClick={(event) => event.stopPropagation()}>
+          <section className="modal icon-browser-modal" role="dialog" aria-modal="true" aria-labelledby="icon-modal-title" aria-describedby="icon-modal-copy" onClick={(event) => event.stopPropagation()}>
             <div className="modal-head">
               <div>
-                <h2>Animated Icon Browser</h2>
-                <p className="modal-copy">Search Magnific animated icons, then add one directly into the project as a GIF.</p>
+                <h2 id="icon-modal-title">Animated Icon Browser</h2>
+                <p className="modal-copy" id="icon-modal-copy">Search Magnific animated icons, then add one directly into the project as a GIF.</p>
               </div>
               <button className="mini-button icon-only-button" type="button" aria-label="Close animated icon browser" title="Close" onClick={closeIconModal} disabled={iconImportingId !== null}><Icon name="close" /></button>
             </div>
@@ -3468,7 +3521,7 @@ function App() {
               <strong>Page {iconPagination.current_page} of {Math.max(1, iconPagination.last_page)}</strong>
             </div>
 
-            {iconError && <div className="icon-browser-error">{iconError}</div>}
+            {iconError && <div className="icon-browser-error" role="alert">{iconError}</div>}
 
             <div className="icon-results-grid">
               {!iconLoading && filteredIconResults.length === 0 && !iconError && (
@@ -3505,11 +3558,11 @@ function App() {
 
       {isGiphyModalOpen && (
         <div className="modal-backdrop" onClick={closeGiphyModal}>
-          <section className="modal icon-browser-modal" onClick={(event) => event.stopPropagation()}>
+          <section className="modal icon-browser-modal" role="dialog" aria-modal="true" aria-labelledby="giphy-modal-title" aria-describedby="giphy-modal-copy" onClick={(event) => event.stopPropagation()}>
             <div className="modal-head">
               <div>
-                <h2>GIPHY Browser</h2>
-                <p className="modal-copy">Search GIPHY, then add a GIF directly into the media bin.</p>
+                <h2 id="giphy-modal-title">GIPHY Browser</h2>
+                <p className="modal-copy" id="giphy-modal-copy">Search GIPHY, then add a GIF directly into the media bin.</p>
               </div>
               <button className="mini-button icon-only-button" type="button" aria-label="Close GIPHY browser" title="Close" onClick={closeGiphyModal} disabled={giphyImportingId !== null}><Icon name="close" /></button>
             </div>
@@ -3538,7 +3591,7 @@ function App() {
               <strong>{giphySearchTerm.trim() ? "GIPHY search" : "GIPHY trending"}</strong>
             </div>
 
-            {giphyError && <div className="icon-browser-error">{giphyError}</div>}
+            {giphyError && <div className="icon-browser-error" role="alert">{giphyError}</div>}
 
             <div className="icon-results-grid">
               {!giphyLoading && giphyResults.length === 0 && !giphyError && (

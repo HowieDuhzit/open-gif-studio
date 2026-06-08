@@ -4,6 +4,77 @@
 
 Build a web app GIF editor that feels like a classic video editor: media bin, preview monitor, timeline, inspector, and export flow. The editor should support non-destructive edits for color changes, transforms, playback controls, filters, effects, and final GIF export.
 
+## Current UI/UX Overhaul - 2026-06-08
+
+Scope: keep Open GIF Studio's graphite workspace, orange/green accent theme, and classic editor model, while raising the visual hierarchy, interaction polish, responsive behavior, labels, and professional finish.
+
+- [x] Re-read repo instructions, lessons, current UI files, active worktree changes, and applicable UI skills.
+- [x] Refine top-level command labeling and hierarchy so import/save/edit/export actions scan cleanly.
+- [x] Improve preview, transport, media bin, inspector, timeline, modal, and status-bar spacing/states without changing the editing model.
+- [x] Strengthen accessibility and interaction quality: clear focus, touch-friendly controls, reduced-motion support, visible loading/progress, and no horizontal overflow on mobile.
+- [x] Preserve the existing theme while reducing one-note heaviness through better surface contrast, border rhythm, and accent discipline.
+- [x] Verify with `npm run build` plus browser smoke checks at desktop and mobile widths.
+- [x] Add review/results notes with commands run and residual risks.
+
+Implementation constraint: keep this as a focused interface pass inside the existing Vite/React structure. Avoid splitting `src/App.tsx` or adding dependencies unless verification proves the current structure cannot support the polish.
+
+Review:
+
+- Used `frontend-design`, `ui-ux-pro-max`, and `playwright-skill` for the interface pass and verification.
+- `src/App.tsx` now uses clearer labels for the command bar, media panel, preview monitor, inspector, and effect tools.
+- `src/styles.css` now has stronger focus states, clearer surface separation, smoother interaction transitions, improved panel/timeline/modal hierarchy, consistent radii, no negative letter-spacing, better mobile touch targets, and a less cramped mobile command layout.
+- Verification passed: `npm run build`.
+- Browser smoke passed against `npm start` production server at `/?example=caption` for 1440x940 and 390x844: preview canvas visible, no horizontal overflow, no mobile undersized interactive targets after fixes.
+- Screenshots captured for inspection: `/tmp/gifeditor-ui-desktop.png` and `/tmp/gifeditor-ui-mobile.png`.
+- Remaining risk: this pass verifies layout and a loaded example project, but it does not exhaustively test every modal and import/export interaction state.
+
+## UI/UX Overhaul Continuation - Modal And Flow Polish - 2026-06-08
+
+Scope: close the remaining UI/UX verification gap by polishing and testing export, about, GIPHY, animated icon, status, and modal interaction states while preserving the established editor theme and behavior.
+
+- [x] Add continuation plan for modal/import/export flow polish.
+- [x] Improve modal semantics, headings, feedback regions, and button labels so dialogs are easier to scan and more accessible.
+- [x] Refine modal, browser-grid, export-summary, and action-bar styling for desktop and mobile.
+- [x] Verify About, Export, GIPHY, Animated Icon, and loaded-editor states in browser smoke tests.
+- [x] Re-run `npm run build`.
+- [x] Document verification results and remaining risks.
+
+Review:
+
+- Added proper `role="dialog"`, modal labels/descriptions, `role="status"` feedback, inline API error alerts, and Escape-to-close support for dialogs when no blocking operation is active.
+- Reworked the export dialog into a preview/settings layout with a clearer metadata summary, live feedback banner, and sticky action bar for long mobile dialogs.
+- Polished modal cards, browser result grids, examples, and mobile modal actions without changing the editor data model.
+- Verification passed: `npm run build`.
+- Modal browser smoke passed against `npm start` production server for 1440x940 and 390x844: About, Export, GIPHY, and Animated Icon dialogs had accessible labels/descriptions, no horizontal overflow, no undersized mobile dialog targets, Escape close worked, and the preview canvas survived the dialog cycle.
+- Export render smoke passed against production build: rendered the caption example, produced `caption-example.gif`, showed a final blob preview, updated the ready feedback, reported a rendered file in the summary, and had no horizontal overflow.
+- Screenshots captured for inspection: `/tmp/gifeditor-desktop-export.png`, `/tmp/gifeditor-mobile-export.png`, `/tmp/gifeditor-mobile-giphy.png`, `/tmp/gifeditor-mobile-icons.png`, and `/tmp/gifeditor-export-rendered.png`.
+- Remaining risk: local browser smoke cannot verify successful GIPHY/Magnific network results without server API keys; it does verify their missing-key error states are presented inline.
+
+## Current Optimization And Cleanup Pass - 2026-06-04
+
+Scope: understand the current browser-first Open GIF Studio app, make a focused optimization/cleanup pass without changing product direction, verify the result, and update `AGENTS.md` with the new working knowledge.
+
+- [x] Re-read repo instructions, lessons, package scripts, task notes, git state, and core app/server files.
+- [x] Skip no-op effect rendering so preview, thumbnails, and export avoid pixel-copy work when only timing/transform/canvas-style effects are active.
+- [x] Consolidate thumbnail scaling helpers to reduce duplicated canvas logic.
+- [x] Clean up export/download object URL lifecycle and small editor-state rough edges found during the pass.
+- [x] Align Vite dev/preview proxy guardrails with the production proxy for remote asset download safety.
+- [x] Run focused verification with `npm run build` and `node --check server.mjs`.
+- [x] Update `AGENTS.md` with the app's current state, cleanup notes, and verification expectations.
+- [x] Add a review/results section with commands run and any remaining risks.
+
+Implementation constraint: keep the pass conservative. Do not split `src/App.tsx` into new modules or add dependencies during this pass unless a verification issue forces it.
+
+Review:
+
+- `src/App.tsx` now treats timing, transform, and canvas-style as non-visual effects and returns the original `ImageData` from `applyEffectStack` when no visual effects are enabled.
+- Thumbnail rendering now shares the same contained-canvas scaling helper for timeline, media-bin, and live preview thumbnails.
+- Static and animated image decoding now closes `ImageBitmap`, `ImageDecoder`, and `VideoFrame` resources on failure paths.
+- Magnific and GIPHY remote imports now share response-to-GIF-file construction.
+- Vite dev/preview proxies now mirror production safety checks for upstream timeouts, private-host blocking, content-type validation, and 25 MB remote asset limits.
+- Verification passed: `npm run build`; `node --check server.mjs`; production `/healthz` and `/` HTTP smoke against `npm start`; Playwright production smoke loading the caption example and confirming a visible preview canvas with no browser errors.
+- Remaining risk: no committed automated browser interaction suite exists in this repo, so worker/import/export behavior still needs manual or temporary Playwright smoke coverage after render-worker, CSP, or proxy changes.
+
 ## Research Summary
 
 - Browser-only editing is best for responsive preview and privacy, but raw decoded GIF frames can exhaust memory quickly.
