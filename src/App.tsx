@@ -61,6 +61,13 @@ type EditorState = {
   frameOrder?: number[];
 };
 
+type CustomFont = {
+  id: string;
+  name: string;
+  family: string;
+  dataUrl: string;
+};
+
 type ProjectAsset = {
   id: string;
   name: string;
@@ -78,6 +85,7 @@ type WorkspaceProject = {
   assets: ProjectAsset[];
   projectEffects: Effect[];
   editors: Record<string, EditorState>;
+  customFonts: CustomFont[];
 };
 
 type SavedProject = {
@@ -92,6 +100,7 @@ type SavedProject = {
   }>;
   projectEffects: Effect[];
   editors: Record<string, EditorState>;
+  customFonts: CustomFont[];
 };
 
 type ExportSettings = {
@@ -199,6 +208,7 @@ const initialEditor: EditorState = {
 
 const workerScript = new URL("gif.js/dist/gif.worker.js", import.meta.url).href;
 const supportedImageAccept = "image/gif,image/png,image/apng,image/webp,image/avif,image/jpeg,image/jpg";
+const supportedFontAccept = ".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2,application/font-woff,application/font-woff2,application/x-font-ttf,application/x-font-otf,application/octet-stream";
 const autosaveKey = "frameforge-editor-state";
 const presetStorageKey = "frameforge-effect-presets";
 const themeStorageKey = "ogs-theme-mode";
@@ -206,12 +216,29 @@ const transparencyKey = { r: 255, g: 0, b: 255 };
 const transparencyKeyNumber = 0xff00ff;
 const maxGifFileBytes = 25 * 1024 * 1024;
 const maxProjectFileBytes = 50 * 1024 * 1024;
+const maxFontFileBytes = 5 * 1024 * 1024;
 const maxGifFrames = 512;
 const maxGifDimension = 4096;
 const maxGifPixels = 16_000_000;
 const giphyPageSize = 24;
 const initialGiphyPagination: GiphyPagination = { offset: 0, total_count: 0, count: 0 };
 const initialMagnificPagination: MagnificPagination = { current_page: 1, per_page: 24, last_page: 1, total: 0 };
+const systemFontOptions = [
+  "Arial",
+  "Arial Black",
+  "Courier New",
+  "Georgia",
+  "Helvetica",
+  "Impact",
+  "IBM Plex Sans",
+  "Inter",
+  "Times New Roman",
+  "Trebuchet MS",
+  "Verdana",
+  "monospace",
+  "serif",
+  "sans-serif",
+] as const;
 const walkthroughSteps: WalkthroughStep[] = [
   { target: "topbar", title: "Command bar", body: "Start here. Load a project or media, save your work, undo or redo edits, reset changes, switch themes, and export finished GIFs from this top bar." },
   { target: "media-bin", title: "Media bin", body: "This panel holds every imported GIF or image. Use + for local files, GIPHY for web GIFs, the sparkle button for animated icons, and the asset controls to hide, isolate, rename, reorder, or remove media." },
@@ -359,6 +386,29 @@ function readString(value: unknown, fallback: string) {
   return typeof value === "string" ? value : fallback;
 }
 
+function isFontDataUrl(value: string) {
+  return /^data:(font\/(ttf|otf|woff2?|sfnt)|application\/(font-woff2?|x-font-(ttf|otf)|octet-stream));base64,/i.test(value);
+}
+
+function sanitizeCustomFont(value: unknown): CustomFont | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value.id, "").trim();
+  const family = readString(value.family, "").trim();
+  const dataUrl = readString(value.dataUrl, "");
+  if (!id || !family || !isFontDataUrl(dataUrl)) return null;
+
+  return {
+    id,
+    family,
+    dataUrl,
+    name: readString(value.name, family).trim() || family,
+  };
+}
+
+function sanitizeCustomFonts(value: unknown) {
+  return Array.isArray(value) ? value.map(sanitizeCustomFont).filter((font): font is CustomFont => Boolean(font)) : [];
+}
+
 function sanitizeEffect(value: unknown): Effect | null {
   if (!isRecord(value) || typeof value.kind !== "string" || !effectKinds.includes(value.kind as EffectKind)) return null;
 
@@ -429,6 +479,7 @@ function validateSavedProject(value: unknown): SavedProject {
     }),
     projectEffects: sanitizeEffects(value.projectEffects),
     editors: isRecord(value.editors) ? Object.fromEntries(Object.entries(value.editors).map(([id, editor]) => [id, sanitizeEditor(editor)])) : {},
+    customFonts: sanitizeCustomFonts(value.customFonts),
   };
 }
 
@@ -907,6 +958,18 @@ function getOverlayImage(dataUrl: string) {
   return image;
 }
 
+function canvasFontFamily(font: string) {
+  const family = font.trim() || "sans-serif";
+  if (["serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui"].includes(family)) return family;
+  return `"${family.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+}
+
+async function registerCustomFont(font: CustomFont) {
+  const face = new FontFace(font.family, `url(${font.dataUrl})`);
+  const loaded = await face.load();
+  document.fonts.add(loaded);
+}
+
 function drawTextOverlay(ctx: CanvasRenderingContext2D, effect: TextOverlayEffect, width: number, height: number) {
   if (!effect.text.trim()) return;
 
@@ -914,7 +977,7 @@ function drawTextOverlay(ctx: CanvasRenderingContext2D, effect: TextOverlayEffec
   ctx.globalAlpha = Math.max(0, Math.min(1, effect.opacity / 100));
   ctx.translate((effect.x / 100) * width, (effect.y / 100) * height);
   ctx.rotate((effect.rotate * Math.PI) / 180);
-  ctx.font = `${effect.weight} ${Math.max(1, effect.size)}px ${effect.font}, sans-serif`;
+  ctx.font = `${effect.weight} ${Math.max(1, effect.size)}px ${canvasFontFamily(effect.font)}, sans-serif`;
   ctx.textAlign = effect.align;
   ctx.textBaseline = "middle";
   ctx.lineJoin = "round";
@@ -1247,6 +1310,11 @@ function isSupportedImageFile(file: File) {
   return ["image/gif", "image/png", "image/webp", "image/avif", "image/jpeg"].includes(type);
 }
 
+function isSupportedFontFile(file: File) {
+  const lower = file.name.toLowerCase();
+  return [".ttf", ".otf", ".woff", ".woff2"].some((extension) => lower.endsWith(extension));
+}
+
 async function gifFileFromResponse(response: Response, fallbackName: string) {
   const blob = await response.blob();
   const contentDisposition = response.headers.get("content-disposition") || "";
@@ -1514,6 +1582,7 @@ function App() {
   const [fitScale, setFitScale] = useState(1);
   const [isPanning, setIsPanning] = useState(false);
   const [overlayImageVersion, setOverlayImageVersion] = useState(0);
+  const [fontVersion, setFontVersion] = useState(0);
   const [walkthroughStepIndex, setWalkthroughStepIndex] = useState<number | null>(null);
   const [walkthroughRect, setWalkthroughRect] = useState<DOMRect | null>(null);
   const previewRef = useRef<HTMLCanvasElement>(null);
@@ -1566,6 +1635,10 @@ function App() {
     if (!styleName) return iconResults;
     return iconResults.filter((icon) => icon.style.name === styleName);
   }, [iconResults, iconStyleFilter]);
+  const fontOptions = useMemo(() => [
+    ...systemFontOptions.map((family) => ({ label: family, family })),
+    ...(project?.customFonts ?? []).map((font) => ({ label: font.name, family: font.family })),
+  ], [project?.customFonts]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
@@ -1577,6 +1650,19 @@ function App() {
     window.addEventListener(overlayImageLoadedEvent, refreshOverlays);
     return () => window.removeEventListener(overlayImageLoadedEvent, refreshOverlays);
   }, []);
+
+  useEffect(() => {
+    if (!project?.customFonts.length) return;
+    let cancelled = false;
+    void Promise.all(project.customFonts.map(registerCustomFont)).then(() => {
+      if (!cancelled) setFontVersion((version) => version + 1);
+    }).catch((error) => {
+      if (!cancelled) setStatus(error instanceof Error ? `Failed to load local font: ${error.message}` : "Failed to load local font.");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.customFonts]);
 
   useEffect(() => {
     if (!walkthroughStep) {
@@ -1703,7 +1789,7 @@ function App() {
       setLiveAssetThumbnails((current) => ({ ...current, [activeAsset.id]: canvasThumbnail(previewRef.current!, 52, 52) }));
     });
     return () => window.cancelAnimationFrame(frameId);
-  }, [activeAsset, selectedFrame, editor, projectEffects, isBeforePreview, overlayImageVersion]);
+  }, [activeAsset, selectedFrame, editor, projectEffects, isBeforePreview, overlayImageVersion, fontVersion]);
 
   useEffect(() => {
     if (!isExportModalOpen || !activeAsset || !selectedFrame || !exportPreviewRef.current) return;
@@ -1711,7 +1797,7 @@ function App() {
       if (exportPreviewRef.current) renderFrame(exportPreviewRef.current, selectedFrame, activeAsset, editor, projectScopedEffects(activeAsset, projectEffects));
     });
     return () => window.cancelAnimationFrame(frameId);
-  }, [activeAsset, editor, isExportModalOpen, projectEffects, selectedFrame, overlayImageVersion]);
+  }, [activeAsset, editor, isExportModalOpen, projectEffects, selectedFrame, overlayImageVersion, fontVersion]);
 
   useEffect(() => {
     if (!isAnyModalOpen) return;
@@ -1788,7 +1874,7 @@ function App() {
       window.clearTimeout(timer);
       cancelers.forEach((cancel) => cancel());
     };
-  }, [activeAsset, currentFrame, deferredEditor, deferredPlayableFrames, deferredProjectEffects, exportProgress, isPlaying, overlayImageVersion]);
+  }, [activeAsset, currentFrame, deferredEditor, deferredPlayableFrames, deferredProjectEffects, exportProgress, isPlaying, overlayImageVersion, fontVersion]);
 
   useEffect(() => {
     if (!deferredProject || deferredProject.assets.length === 0) {
@@ -1827,7 +1913,7 @@ function App() {
       window.clearTimeout(timer);
       cancelers.forEach((cancel) => cancel());
     };
-  }, [deferredProject, exportProgress, isPlaying, overlayImageVersion]);
+  }, [deferredProject, exportProgress, isPlaying, overlayImageVersion, fontVersion]);
 
   function updateEditor(next: Partial<EditorState>) {
     if (!project || !activeAsset) return;
@@ -1937,6 +2023,59 @@ function App() {
 
   function updateEffect(id: string, next: Partial<Effect>) {
     updateActiveEffects(activeEffects.map((effect) => (effect.id === id ? ({ ...effect, ...next } as Effect) : effect)));
+  }
+
+  async function addLocalFontToEffect(effectId: string, file: File) {
+    if (!project) return;
+    if (!isSupportedFontFile(file)) {
+      setStatus("Choose a TTF, OTF, WOFF, or WOFF2 font file.");
+      return;
+    }
+    if (file.size > maxFontFileBytes) {
+      setStatus(`${file.name} is too large to use as a local font.`);
+      return;
+    }
+
+    try {
+      const id = crypto.randomUUID();
+      const dataUrl = await fileToDataUrl(file);
+      const name = safeFileBase(file.name.replace(/\.[^.]+$/, ""), "Local font");
+      const font: CustomFont = { id, name, family: `OGS Local ${id}`, dataUrl };
+      await registerCustomFont(font);
+
+      if (activeAsset && effectScope !== "project") {
+        setHistory((current) => ({ past: [...current.past, editor].slice(-50), future: [] }));
+        lastHistorySnapshotRef.current = performance.now();
+      }
+
+      setProject((current) => {
+        if (!current) return current;
+        const updateFont = (effects: Effect[]) => effects.map((effect) => (effect.id === effectId && effect.kind === "text-overlay" ? { ...effect, font: font.family } : effect));
+        const customFonts = [...current.customFonts, font];
+
+        if (effectScope === "project") return { ...current, customFonts, projectEffects: updateFont(current.projectEffects) };
+        if (!activeAsset) return { ...current, customFonts };
+
+        const currentEditor = current.editors[activeAsset.id] ?? createDefaultEditor();
+        const nextEditor = effectScope === "frame" && activeFrameKey
+          ? { ...currentEditor, frameEffects: { ...currentEditor.frameEffects, [activeFrameKey]: updateFont(currentEditor.frameEffects[activeFrameKey] ?? []) } }
+          : { ...currentEditor, effects: updateFont(currentEditor.effects) };
+
+        return {
+          ...current,
+          customFonts,
+          editors: {
+            ...current.editors,
+            [activeAsset.id]: nextEditor,
+          },
+        };
+      });
+      setFontVersion((version) => version + 1);
+      setDownloadUrl(null);
+      setStatus(`Loaded local font ${name}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? `Failed to load local font: ${error.message}` : "Failed to load local font.");
+    }
   }
 
   function addEffect(kind: EffectKind) {
@@ -2094,6 +2233,7 @@ function App() {
           assets,
           projectEffects: current?.projectEffects ?? [],
           editors,
+          customFonts: current?.customFonts ?? [],
         } satisfies WorkspaceProject;
       });
 
@@ -2242,6 +2382,7 @@ function App() {
     try {
       const saved = validateSavedProject(JSON.parse(await file.text()));
       setStatus(`Loading project ${saved.name}...`);
+      await Promise.all(saved.customFonts.map(registerCustomFont));
       const assets: ProjectAsset[] = [];
       for (const asset of saved.assets) {
         const buffer = await dataUrlToArrayBuffer(asset.sourceDataUrl);
@@ -2260,6 +2401,7 @@ function App() {
         assets,
         projectEffects: saved.projectEffects ?? [],
         editors,
+        customFonts: saved.customFonts ?? [],
       });
       setIsPlaying(assets.length > 0);
       setStatus(`Loaded project ${saved.name}.`);
@@ -2285,6 +2427,7 @@ function App() {
       })),
       projectEffects: project.projectEffects,
       editors: project.editors,
+      customFonts: project.customFonts,
     };
 
     const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
@@ -2442,6 +2585,7 @@ function App() {
         assets: [asset],
         projectEffects: [],
         editors: { [asset.id]: editorState },
+        customFonts: [],
       });
       setCurrentFrame(0);
       setEffectScope("global");
@@ -3190,6 +3334,14 @@ function App() {
                   {effect.kind === "text-overlay" && (
                     <>
                       <label title="Text drawn over the GIF">Text<input type="text" value={effect.text} onChange={(event) => updateEffect(effect.id, { text: event.target.value })} /></label>
+                      <label title="Choose a preinstalled/system font or a loaded local font">Font<select value={effect.font} onChange={(event) => updateEffect(effect.id, { font: event.target.value })}>{!fontOptions.some((font) => font.family === effect.font) && <option value={effect.font}>{effect.font}</option>}{fontOptions.map((font) => <option key={font.family} value={font.family}>{font.label}</option>)}</select></label>
+                      <label title="Load a local font file for this project">Local font<input type="file" accept={supportedFontAccept} onChange={async (event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        await addLocalFontToEffect(effect.id, file);
+                        event.target.value = "";
+                      }} /></label>
+                      <span className="field-note">Use TTF, OTF, WOFF, or WOFF2. Local fonts are saved inside project files.</span>
                       <div className="split-buttons">
                         <label title="Horizontal text position">X {effect.x}%<input type="range" min="0" max="100" value={effect.x} onChange={(event) => updateEffect(effect.id, { x: Number(event.target.value) })} /></label>
                         <label title="Vertical text position">Y {effect.y}%<input type="range" min="0" max="100" value={effect.y} onChange={(event) => updateEffect(effect.id, { y: Number(event.target.value) })} /></label>

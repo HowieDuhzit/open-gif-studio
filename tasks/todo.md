@@ -4,6 +4,28 @@
 
 Build a web app GIF editor that feels like a classic video editor: media bin, preview monitor, timeline, inspector, and export flow. The editor should support non-destructive edits for color changes, transforms, playback controls, filters, effects, and final GIF export.
 
+## Text Overlay Font Support - 2026-06-08
+
+Scope: expose font choice for text overlays, support common preinstalled/system fonts, allow local font upload for browser-side preview/export, and preserve uploaded font data in saved project files.
+
+- [x] Re-read text overlay types, sanitization, rendering, project save/load, and inspector UI.
+- [x] Add project-level custom font records and validation for `.ogsp.json` files.
+- [x] Register uploaded local fonts with `FontFace` and refresh previews/exports when they load.
+- [x] Add text overlay controls for preinstalled/system fonts and local font upload.
+- [x] Quote/sanitize canvas font families so names with spaces render reliably.
+- [x] Verify with `npm run build` and document results.
+
+Implementation constraint: keep this focused inside the current single-file app structure and avoid adding dependencies. Uploaded local fonts should remain client-side data URLs bundled only into saved project files.
+
+Review:
+
+- `src/App.tsx` now exposes a text overlay font selector with common system/preinstalled font options plus loaded local fonts.
+- Local TTF, OTF, WOFF, and WOFF2 uploads are registered with `FontFace`, applied to the active text overlay, and stored as project-level custom font data.
+- Saved `.ogsp.json` files now include custom fonts; project import sanitizes and registers them before rendering.
+- Canvas text rendering now quotes font family names safely before drawing overlays.
+- Verification passed: `npm run build`.
+- Remaining risk: build verification covers TypeScript and production bundling, but local font rendering was not browser-smoke-tested with an actual uploaded font file in this pass.
+
 ## Current UI/UX Overhaul - 2026-06-08
 
 Scope: keep Open GIF Studio's graphite workspace, orange/green accent theme, and classic editor model, while raising the visual hierarchy, interaction polish, responsive behavior, labels, and professional finish.
