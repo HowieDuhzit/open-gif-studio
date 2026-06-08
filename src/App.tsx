@@ -68,6 +68,13 @@ type CustomFont = {
   dataUrl: string;
 };
 
+type LocalFontData = {
+  family: string;
+  fullName?: string;
+  postscriptName?: string;
+  style?: string;
+};
+
 type ProjectAsset = {
   id: string;
   name: string;
@@ -136,6 +143,12 @@ type GiphyGif = {
     original?: { url?: string; width?: string; height?: string };
   };
 };
+
+declare global {
+  interface Window {
+    queryLocalFonts?: () => Promise<LocalFontData[]>;
+  }
+}
 
 type GiphyPagination = {
   offset: number;
@@ -407,6 +420,20 @@ function sanitizeCustomFont(value: unknown): CustomFont | null {
 
 function sanitizeCustomFonts(value: unknown) {
   return Array.isArray(value) ? value.map(sanitizeCustomFont).filter((font): font is CustomFont => Boolean(font)) : [];
+}
+
+function uniqueFontFamilies(fonts: string[]) {
+  const seen = new Set<string>();
+  return fonts
+    .map((font) => font.trim())
+    .filter((font) => {
+      if (!font) return false;
+      const key = font.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => a.localeCompare(b));
 }
 
 function sanitizeEffect(value: unknown): Effect | null {
@@ -1583,6 +1610,8 @@ function App() {
   const [isPanning, setIsPanning] = useState(false);
   const [overlayImageVersion, setOverlayImageVersion] = useState(0);
   const [fontVersion, setFontVersion] = useState(0);
+  const [systemFontFamilies, setSystemFontFamilies] = useState<string[]>([]);
+  const [isScanningFonts, setIsScanningFonts] = useState(false);
   const [walkthroughStepIndex, setWalkthroughStepIndex] = useState<number | null>(null);
   const [walkthroughRect, setWalkthroughRect] = useState<DOMRect | null>(null);
   const previewRef = useRef<HTMLCanvasElement>(null);
@@ -1635,10 +1664,11 @@ function App() {
     if (!styleName) return iconResults;
     return iconResults.filter((icon) => icon.style.name === styleName);
   }, [iconResults, iconStyleFilter]);
+  const canScanSystemFonts = typeof window.queryLocalFonts === "function";
   const fontOptions = useMemo(() => [
-    ...systemFontOptions.map((family) => ({ label: family, family })),
+    ...uniqueFontFamilies([...systemFontOptions, ...systemFontFamilies]).map((family) => ({ label: family, family })),
     ...(project?.customFonts ?? []).map((font) => ({ label: font.name, family: font.family })),
-  ], [project?.customFonts]);
+  ], [project?.customFonts, systemFontFamilies]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
@@ -2023,6 +2053,25 @@ function App() {
 
   function updateEffect(id: string, next: Partial<Effect>) {
     updateActiveEffects(activeEffects.map((effect) => (effect.id === id ? ({ ...effect, ...next } as Effect) : effect)));
+  }
+
+  async function scanSystemFonts() {
+    if (!window.queryLocalFonts) {
+      setStatus("This browser does not support scanning installed system fonts. Use the built-in list or upload a local font file.");
+      return;
+    }
+
+    setIsScanningFonts(true);
+    try {
+      const fonts = await window.queryLocalFonts();
+      const families = uniqueFontFamilies(fonts.map((font) => font.family));
+      setSystemFontFamilies(families);
+      setStatus(families.length > 0 ? `Found ${families.length} installed font ${families.length === 1 ? "family" : "families"}.` : "No installed fonts were returned by the browser.");
+    } catch (error) {
+      setStatus(error instanceof Error ? `System font scan failed: ${error.message}` : "System font scan failed.");
+    } finally {
+      setIsScanningFonts(false);
+    }
   }
 
   async function addLocalFontToEffect(effectId: string, file: File) {
@@ -3335,13 +3384,14 @@ function App() {
                     <>
                       <label title="Text drawn over the GIF">Text<input type="text" value={effect.text} onChange={(event) => updateEffect(effect.id, { text: event.target.value })} /></label>
                       <label title="Choose a preinstalled/system font or a loaded local font">Font<select value={effect.font} onChange={(event) => updateEffect(effect.id, { font: event.target.value })}>{!fontOptions.some((font) => font.family === effect.font) && <option value={effect.font}>{effect.font}</option>}{fontOptions.map((font) => <option key={font.family} value={font.family}>{font.label}</option>)}</select></label>
+                      <button type="button" className="secondary-button" disabled={!canScanSystemFonts || isScanningFonts} title={canScanSystemFonts ? "Ask the browser for installed local font families" : "System font scanning is not supported in this browser"} onClick={scanSystemFonts}>{isScanningFonts ? "Scanning fonts..." : "Scan system fonts"}</button>
                       <label title="Load a local font file for this project">Local font<input type="file" accept={supportedFontAccept} onChange={async (event) => {
                         const file = event.target.files?.[0];
                         if (!file) return;
                         await addLocalFontToEffect(effect.id, file);
                         event.target.value = "";
                       }} /></label>
-                      <span className="field-note">Use TTF, OTF, WOFF, or WOFF2. Local fonts are saved inside project files.</span>
+                      <span className="field-note">System scans need browser permission. Use TTF, OTF, WOFF, or WOFF2 uploads for project-saved fonts.</span>
                       <div className="split-buttons">
                         <label title="Horizontal text position">X {effect.x}%<input type="range" min="0" max="100" value={effect.x} onChange={(event) => updateEffect(effect.id, { x: Number(event.target.value) })} /></label>
                         <label title="Vertical text position">Y {effect.y}%<input type="range" min="0" max="100" value={effect.y} onChange={(event) => updateEffect(effect.id, { y: Number(event.target.value) })} /></label>

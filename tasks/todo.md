@@ -8,12 +8,17 @@ Build a web app GIF editor that feels like a classic video editor: media bin, pr
 
 Scope: expose font choice for text overlays, support common preinstalled/system fonts, allow local font upload for browser-side preview/export, and preserve uploaded font data in saved project files.
 
+Follow-up scope: detect installed system fonts where the browser allows it, without adding a remote font dependency or changing CSP/network behavior.
+
 - [x] Re-read text overlay types, sanitization, rendering, project save/load, and inspector UI.
 - [x] Add project-level custom font records and validation for `.ogsp.json` files.
 - [x] Register uploaded local fonts with `FontFace` and refresh previews/exports when they load.
 - [x] Add text overlay controls for preinstalled/system fonts and local font upload.
 - [x] Quote/sanitize canvas font families so names with spaces render reliably.
 - [x] Verify with `npm run build` and document results.
+- [x] Add a user-triggered system font scan using the Local Font Access API where supported.
+- [x] Merge discovered system font families into the text overlay font dropdown with deduplication.
+- [x] Re-run `npm run build` and update review notes.
 
 Implementation constraint: keep this focused inside the current single-file app structure and avoid adding dependencies. Uploaded local fonts should remain client-side data URLs bundled only into saved project files.
 
@@ -23,8 +28,11 @@ Review:
 - Local TTF, OTF, WOFF, and WOFF2 uploads are registered with `FontFace`, applied to the active text overlay, and stored as project-level custom font data.
 - Saved `.ogsp.json` files now include custom fonts; project import sanitizes and registers them before rendering.
 - Canvas text rendering now quotes font family names safely before drawing overlays.
+- The text overlay inspector now has a `Scan system fonts` action that uses `window.queryLocalFonts()` in browsers that support the Local Font Access API.
+- Discovered installed font families are merged into the dropdown with the built-in options and uploaded local fonts.
 - Verification passed: `npm run build`.
-- Remaining risk: build verification covers TypeScript and production bundling, but local font rendering was not browser-smoke-tested with an actual uploaded font file in this pass.
+- Verification passed again after system font scanning: `npm run build`.
+- Remaining risk: build verification covers TypeScript and production bundling, but local font rendering and installed-font permission flow were not browser-smoke-tested with actual font files in this pass.
 
 ## Current UI/UX Overhaul - 2026-06-08
 
